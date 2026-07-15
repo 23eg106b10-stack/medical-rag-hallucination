@@ -1,0 +1,27 @@
+# ── Core dependencies ──────────────────────────────────────────────────────
+# Python 3.11+
+
+# --- LLM & Embeddings ---
+openai>=1.0.0
+anthropic>=0.30.0
+sentence-transformers>=2.2.0
+
+# --- Vector Store & Retrieval ---
+faiss-cpu>=1.7.4
+rank-bm25>=0.2.2
+
+# --- Data Processing ---
+pandas>=2.0.0
+numpy>=1.24.0
+datasets>=2.14.0
+
+# --- Framework ---
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+
+# --- App ---
+streamlit>=1.28.0
+
+# --- Utilities ---
+pyyaml>=6.0
+tqdm>=4.65.0

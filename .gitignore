@@ -1,0 +1,62 @@
+# --- Python ---
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+*.egg
+.eggs/
+*.whl
+
+# --- Environments & Secrets ---
+.env
+.venv/
+venv/
+env/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Data (populated locally) ---
+data/corpus/*
+!data/corpus/.gitkeep
+data/pubmedqa/*
+!data/pubmedqa/.gitkeep
+data/medmcqa/*
+!data/medmcqa/.gitkeep
+data/annotations/*
+!data/annotations/.gitkeep
+data/faiss_index.bin
+data/bm25_index.pkl
+
+# --- Logs ---
+logs/*
+!logs/.gitkeep
+
+# --- Notebook checkpoints ---
+.ipynb_checkpoints/
+
+# --- Generated outputs (answers, metrics, figures) ---
+outputs/generated_answers/*
+!outputs/generated_answers/.gitkeep
+outputs/metrics/*
+!outputs/metrics/.gitkeep
+outputs/figures/*
+!outputs/figures/.gitkeep
+
+# --- Evaluation results (can be large) ---
+evaluation/results/*
+!evaluation/results/.gitkeep
+
+# --- Model cache ---
+.transformers/
+.huggingface/
+.sentence_transformers/
