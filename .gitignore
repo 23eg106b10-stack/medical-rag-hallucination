@@ -56,6 +56,10 @@ outputs/figures/*
 evaluation/results/*
 !evaluation/results/.gitkeep
 
+# --- Index artifacts (built locally, not committed) ---
+index/artifacts/*
+!index/artifacts/.gitkeep
+
 # --- Model cache ---
 .transformers/
 .huggingface/
