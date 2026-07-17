@@ -42,9 +42,13 @@ class Settings(BaseSettings):
     pubmedqa_dir: Path = Path("data/pubmedqa")
     medmcqa_dir: Path = Path("data/medmcqa")
     annotations_dir: Path = Path("data/annotations")
+    indexes_dir: Path = Path("data/indexes")
 
     # ── Outputs ──────────────────────────────────────────────────────────
     outputs_dir: Path = Path("outputs")
+
+    # ── Indexes (M3.1.2+) ────────────────────────────────────────────────
+    bm25_index_filename: str = "bm25_index.json"
 
     # ── Corpus Construction (M3.1.1) ────────────────────────────────────
     # Canonical location of the frozen, version-controlled MeSH query

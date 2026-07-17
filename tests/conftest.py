@@ -1,22 +1,17 @@
-"""Shared pytest fixtures for the medical-rag-hallucination test suite."""
+"""Root test configuration for d:/RMQ.
+
+Ensures the repository root is on ``sys.path`` so tests can import
+top-level packages such as ``index`` and ``schemas`` when running
+``pytest`` from the repository root.
+"""
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
-import pytest
-from _pytest.monkeypatch import MonkeyPatch
-
-
-@pytest.fixture
-def settings_env(monkeypatch: MonkeyPatch) -> None:
-    """Fixture that sets minimal env vars so Settings loads without a real .env."""
-    monkeypatch.setenv("ENVIRONMENT", "test")
-    monkeypatch.setenv("LOG_LEVEL", "DEBUG")
-    monkeypatch.setenv("HF_TOKEN", "hf_test_fake_token")
-
-
-@pytest.fixture
-def test_data_dir(tmp_path: Path) -> Path:
-    """Provide a temporary directory for test data."""
-    return tmp_path
+# Insert the repository root at the front of sys.path so that
+# ``import index`` and ``import schemas`` resolve correctly.
+ROOT_DIR = Path(__file__).resolve().parent.parent
+if str(ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(ROOT_DIR))
