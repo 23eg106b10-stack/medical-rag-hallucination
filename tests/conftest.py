@@ -4,9 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from _pytest.monkeypatch import MonkeyPatch
-
 import pytest
+from _pytest.monkeypatch import MonkeyPatch
 
 
 @pytest.fixture
