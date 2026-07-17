@@ -1,0 +1,85 @@
+# Query Specification — Source B (NCBI E-utilities)
+#
+# M3.1.1 Query Specification v1.0 (FROZEN)
+#
+# This is the project's approved, version-controlled MeSH query set,
+# consumed (never modified) by index.corpus_sources.load_query_specification.
+# Per the M3.1.1 Query Specification Contract: any modification to this
+# file constitutes a new corpus specification version and therefore
+# changes the resulting corpus — bump `version` accordingly.
+
+version: "1.0"
+
+queries:
+  - subject_area: Cardiology
+    description: Diseases affecting the heart and vascular system
+    mesh_term: '"Cardiovascular Diseases"[MeSH]'
+  - subject_area: Neurology
+    description: Disorders of the nervous system
+    mesh_term: '"Nervous System Diseases"[MeSH]'
+  - subject_area: Endocrinology
+    description: Disorders of endocrine glands and metabolism
+    mesh_term: '"Endocrine System Diseases"[MeSH]'
+  - subject_area: Gastroenterology
+    description: Diseases of the digestive system
+    mesh_term: '"Digestive System Diseases"[MeSH]'
+  - subject_area: Pulmonology
+    description: Diseases affecting the respiratory system
+    mesh_term: '"Respiratory Tract Diseases"[MeSH]'
+  - subject_area: Nephrology
+    description: Kidney and urinary system diseases
+    mesh_term: '"Kidney Diseases"[MeSH]'
+  - subject_area: Hematology
+    description: Blood and hematologic disorders
+    mesh_term: '"Hematologic Diseases"[MeSH]'
+  - subject_area: Oncology
+    description: Benign and malignant neoplasms
+    mesh_term: '"Neoplasms"[MeSH]'
+  - subject_area: Infectious Disease
+    description: Communicable infectious diseases
+    mesh_term: '"Communicable Diseases"[MeSH]'
+  - subject_area: Microbiology
+    description: Bacterial pathogens and bacteriology
+    mesh_term: '"Bacteria"[MeSH]'
+  - subject_area: Virology
+    description: Viral pathogens and virology
+    mesh_term: '"Viruses"[MeSH]'
+  - subject_area: Immunology
+    description: Immune system disorders
+    mesh_term: '"Immune System Diseases"[MeSH]'
+  - subject_area: Pharmacology
+    description: Drug actions and pharmacological science
+    mesh_term: '"Pharmacology"[MeSH]'
+  - subject_area: Toxicology
+    description: Poisoning and toxic exposures
+    mesh_term: '"Poisoning"[MeSH]'
+  - subject_area: Pediatrics
+    description: Child health and pediatric medicine
+    mesh_term: '"Pediatrics"[MeSH]'
+  - subject_area: Obstetrics
+    description: Pregnancy and childbirth
+    mesh_term: '"Obstetrics"[MeSH]'
+  - subject_area: Gynecology
+    description: Female reproductive system disorders
+    mesh_term: '"Gynecology"[MeSH]'
+  - subject_area: Psychiatry
+    description: Mental health disorders
+    mesh_term: '"Mental Disorders"[MeSH]'
+  - subject_area: Dermatology
+    description: Skin disorders
+    mesh_term: '"Skin Diseases"[MeSH]'
+  - subject_area: Ophthalmology
+    description: Eye diseases and vision disorders
+    mesh_term: '"Eye Diseases"[MeSH]'
+  - subject_area: Otolaryngology
+    description: Ear, nose and throat disorders
+    mesh_term: '"Otorhinolaryngologic Diseases"[MeSH]'
+  - subject_area: Orthopedics
+    description: Musculoskeletal disorders
+    mesh_term: '"Musculoskeletal Diseases"[MeSH]'
+  - subject_area: Emergency Medicine
+    description: Emergency and acute care medicine
+    mesh_term: '"Emergency Medicine"[MeSH]'
+  - subject_area: Public Health
+    description: Population health and preventive medicine
+    mesh_term: '"Public Health"[MeSH]'

@@ -46,6 +46,23 @@ class Settings(BaseSettings):
     # ── Outputs ──────────────────────────────────────────────────────────
     outputs_dir: Path = Path("outputs")
 
+    # ── Corpus Construction (M3.1.1) ────────────────────────────────────
+    # Canonical location of the frozen, version-controlled MeSH query
+    # specification consumed (never written) by corpus construction. See
+    # M3.1.1 "Query Specification Contract".
+    queries_path: Path = Path("config/queries.yaml")
+
+    # Filename of the PubMedQA release file (under pubmedqa_dir) that
+    # provides the PMID list for Source A coverage. Configurable rather
+    # than hardcoded since the exact release layout is a dataset detail,
+    # not an architectural one.
+    pubmedqa_filename: str = "ori_pqal.json"
+
+    # NCBI E-utilities requires an identifying contact per their usage
+    # policy; api_key is optional but raises the allowed request rate.
+    ncbi_email: str = ""
+    ncbi_api_key: str = ""
+
     def log_level_int(self) -> int:
         """Resolve the configured level name to a ``logging`` module constant.
 
