@@ -125,7 +125,12 @@ def search_ncbi_pmids(mesh_term: str, settings: Settings, client: httpx.Client) 
     """
     response = client.get(
         f"{_EUTILS_BASE}/esearch.fcgi",
-        params={**_eutils_params(settings), "db": "pubmed", "term": mesh_term, "retmax": "10000"},
+        params={
+            **_eutils_params(settings),
+            "db": "pubmed",
+            "term": mesh_term,
+            "retmax": "10000",
+        },
     )
     response.raise_for_status()
 
@@ -170,7 +175,11 @@ def fetch_ncbi_abstracts(
         response.raise_for_status()
         records.extend(_parse_efetch_xml(response.text))
 
-    logger.info("NCBI EFetch retrieved %d records for %d requested PMIDs", len(records), len(pmids))
+    logger.info(
+        "NCBI EFetch retrieved %d records for %d requested PMIDs",
+        len(records),
+        len(pmids),
+    )
     return records
 
 

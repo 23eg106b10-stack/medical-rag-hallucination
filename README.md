@@ -59,7 +59,7 @@ medical-rag-hallucination/
 | 3 | Corpus construction | ⬜ |
 | 4 | BM25 index building | ⬜ |
 | 5 | Hybrid retrieval (BM25 + FAISS) | ⬜ |
-| 6 | FAISS index building | ⬜ |
+| 6 | FAISS index building | ✅ |
 | 7 | Retriever integration | ⬜ |
 | 8 | LLM generation with prompts | ⬜ |
 | 9 | Claim extraction | ⬜ |

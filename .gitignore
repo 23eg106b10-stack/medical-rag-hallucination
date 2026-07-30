@@ -28,14 +28,14 @@ Thumbs.db
 # --- Data (populated locally) ---
 data/corpus/*
 !data/corpus/.gitkeep
+data/indexes/*
+!data/indexes/.gitkeep
 data/pubmedqa/*
 !data/pubmedqa/.gitkeep
 data/medmcqa/*
 !data/medmcqa/.gitkeep
 data/annotations/*
 !data/annotations/.gitkeep
-data/faiss_index.bin
-data/bm25_index.pkl
 
 # --- Logs ---
 logs/*
@@ -55,10 +55,6 @@ outputs/figures/*
 # --- Evaluation results (can be large) ---
 evaluation/results/*
 !evaluation/results/.gitkeep
-
-# --- Index artifacts (built locally, not committed) ---
-index/artifacts/*
-!index/artifacts/.gitkeep
 
 # --- Model cache ---
 .transformers/

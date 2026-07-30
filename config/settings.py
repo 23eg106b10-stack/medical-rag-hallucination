@@ -50,6 +50,17 @@ class Settings(BaseSettings):
     # ── Indexes (M3.1.2+) ────────────────────────────────────────────────
     bm25_index_filename: str = "bm25_index.json"
 
+    # ── Dense Index (M3.1.3) ─────────────────────────────────────────────
+    faiss_index_filename: str = "faiss_index.bin"
+    medcpt_model_name: str = "ncbi/MedCPT-Article-Encoder"
+    embedding_batch_size: int = 16
+
+    # ── Hybrid Retrieval (M3.2) ──────────────────────────────────────────
+    # Query-side MedCPT encoder, distinct from medcpt_model_name above
+    # (the article/document-side encoder used to build the FAISS index).
+    # Frozen per the M3.2 architecture decision.
+    medcpt_query_encoder_model_name: str = "ncbi/MedCPT-Query-Encoder"
+
     # ── Corpus Construction (M3.1.1) ────────────────────────────────────
     # Canonical location of the frozen, version-controlled MeSH query
     # specification consumed (never written) by corpus construction. See

@@ -35,7 +35,9 @@ def test_default_environment_and_log_level(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.log_level == "INFO"
 
 
-def test_log_dir_defaults_to_relative_logs_path(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_log_dir_defaults_to_relative_logs_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """log_dir defaults to Path('logs') when LOG_DIR is unset."""
     monkeypatch.delenv("LOG_DIR", raising=False)
     settings = get_settings()
@@ -72,7 +74,9 @@ def test_log_level_int_is_case_insensitive(monkeypatch: pytest.MonkeyPatch) -> N
     assert settings.log_level_int() == logging.DEBUG
 
 
-def test_log_level_int_invalid_level_raises_value_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_log_level_int_invalid_level_raises_value_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """An unrecognized log_level raises ValueError, per the frozen contract."""
     monkeypatch.setenv("LOG_LEVEL", "NOT_A_REAL_LEVEL")
     settings = get_settings()
@@ -80,9 +84,17 @@ def test_log_level_int_invalid_level_raises_value_error(monkeypatch: pytest.Monk
         settings.log_level_int()
 
 
-def test_unset_data_path_fields_have_expected_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_unset_data_path_fields_have_expected_defaults(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Data directory fields default to their documented relative paths."""
-    for var in ("CORPUS_DIR", "PUBMEDQA_DIR", "MEDMCQA_DIR", "ANNOTATIONS_DIR", "OUTPUTS_DIR"):
+    for var in (
+        "CORPUS_DIR",
+        "PUBMEDQA_DIR",
+        "MEDMCQA_DIR",
+        "ANNOTATIONS_DIR",
+        "OUTPUTS_DIR",
+    ):
         monkeypatch.delenv(var, raising=False)
     settings = get_settings()
     assert settings.corpus_dir == Path("data/corpus")
