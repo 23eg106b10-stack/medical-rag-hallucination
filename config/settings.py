@@ -61,6 +61,30 @@ class Settings(BaseSettings):
     # Frozen per the M3.2 architecture decision.
     medcpt_query_encoder_model_name: str = "ncbi/MedCPT-Query-Encoder"
 
+    # ── LLM Generation (M3.3) ────────────────────────────────────────────
+    # Per ADR-M3.3-001: Transformers + bitsandbytes is the mandatory
+    # inference backend. Only fields actually consumed by
+    # generation.llm_loader are added here — deliberately not adding
+    # decoding-parameter fields (max_new_tokens, temperature, etc.) yet,
+    # since no module in the frozen M3.3 scope owns the concrete
+    # generate_fn that would consume them. See implementation report.
+    llm_model_name: str = "meta-llama/Llama-3.1-8B-Instruct"
+    llm_load_in_4bit: bool = True
+    llm_bnb_4bit_quant_type: str = "nf4"
+    llm_bnb_4bit_compute_dtype: str = "float16"
+    llm_device_map: str = "auto"
+
+    # Decoding parameters, consumed by generation.generator.make_transformers_generate_fn.
+    # do_sample=False (greedy) is a provisional default pending a formal
+    # decoding-determinism ADR — see the M3.3 implementation report.
+    llm_max_new_tokens: int = 512
+    llm_do_sample: bool = False
+
+    # Prompt token budget, consumed by generation.context_builder.PromptBuilder.
+    # Budgets the prompt only; does not reserve headroom for
+    # llm_max_new_tokens — see PromptBuilder's constructor docstring.
+    llm_context_window: int = 3072
+
     # ── Corpus Construction (M3.1.1) ────────────────────────────────────
     # Canonical location of the frozen, version-controlled MeSH query
     # specification consumed (never written) by corpus construction. See
