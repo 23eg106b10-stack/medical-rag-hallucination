@@ -13,6 +13,7 @@ from pathlib import Path
 
 import pytest
 
+from config.settings import Settings, get_settings
 from index.bm25_pipeline import (
     build_index,
     extract_document_text,
@@ -22,6 +23,7 @@ from index.bm25_pipeline import (
     validate_corpus,
     write_metadata,
 )
+from index.build_bm25 import build_bm25_index
 from schemas.bm25 import BM25Metadata
 from schemas.corpus import CorpusDocument, CorpusMetadata
 
@@ -235,3 +237,37 @@ class TestWriteMetadata:
         metadata = write_metadata(10, "v1", tmp_path / "m.json")
         created = datetime.fromisoformat(metadata.created_at)
         assert created.tzinfo is not None
+
+
+# ── build_bm25_index (ACR-003 regression tests) ──────────────────────────────
+
+
+class TestBuildBm25Index:
+    """ACR-003 regression tests for build_bm25_index configuration handling."""
+
+    def test_default_bm25_index_filename_is_pkl(self) -> None:
+        settings = get_settings()
+        assert settings.bm25_index_filename == "bm25_index.pkl"
+
+    def test_build_bm25_index_respects_custom_filename(
+        self, corpus_dir: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        custom_filename = "custom_bm25_index.pkl"
+        indexes_dir = corpus_dir.parent / "indexes"
+        indexes_dir.mkdir(exist_ok=True)
+
+        test_settings = Settings(
+            corpus_dir=corpus_dir,
+            indexes_dir=indexes_dir,
+            bm25_index_filename=custom_filename,
+        )
+
+        monkeypatch.setattr("index.build_bm25.get_settings", lambda: test_settings)
+
+        build_bm25_index()
+
+        expected_index_path = indexes_dir / custom_filename
+        hardcoded_index_path = indexes_dir / "bm25_index.pkl"
+
+        assert expected_index_path.exists()
+        assert not hardcoded_index_path.exists()

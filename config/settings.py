@@ -48,7 +48,11 @@ class Settings(BaseSettings):
     outputs_dir: Path = Path("outputs")
 
     # ── Indexes (M3.1.2+) ────────────────────────────────────────────────
-    bm25_index_filename: str = "bm25_index.json"
+    # Corrected to .pkl per ACR-003: the artifact is a pickled
+    # {"model": BM25Okapi, "pmids": [...]} payload, not JSON. The original
+    # ".json" default matched a frozen-architecture naming error, not the
+    # actual serialization format produced by index/bm25_pipeline.py.
+    bm25_index_filename: str = "bm25_index.pkl"
 
     # ── Dense Index (M3.1.3) ─────────────────────────────────────────────
     faiss_index_filename: str = "faiss_index.bin"

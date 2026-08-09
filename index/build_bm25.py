@@ -37,7 +37,7 @@ def build_bm25_index() -> None:
     """
     settings = get_settings()
     corpus_path = settings.corpus_dir / "corpus.jsonl"
-    index_path = settings.indexes_dir / "bm25_index.pkl"
+    index_path = settings.indexes_dir / settings.bm25_index_filename
     metadata_path = settings.indexes_dir / "bm25_metadata.json"
 
     logger.info("Reading corpus...")
