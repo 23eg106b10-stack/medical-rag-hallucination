@@ -8,20 +8,25 @@
 ## Current Milestone
 
 **M3.2 Hybrid Retrieval — Runtime Bring-Up**
-Status: 🔄 Validation / integration bring-up
-Objective: Validate the already-frozen M3.2 Hybrid Retrieval architecture against real, live-built artifacts (corpus, BM25 index, FAISS index) rather than the fakes/mocks used at freeze time. No architectural change is in scope — this is runtime verification of frozen M3.2 work.
+Status: ✅ Runtime validation complete
+Objective: Validate the already-frozen M3.2 Hybrid Retrieval architecture against real, live-built artifacts (corpus, BM25 index, FAISS index) rather than the fakes/mocks used at freeze time. Composition root implemented (`retrieval/bootstrap.py`, `tests/retrieval/test_bootstrap.py`) and validated end-to-end against real artifacts — see Last Frozen/Completed Milestones below.
 
 **M4 — Claim Extraction (paused)**
-Status: ⏸️ Paused pending real retrieval/runtime validation
+Status: ⏸️ Paused
+Reason: M3.2 runtime validation is complete; M4 remains paused pending explicit resumption.
 Objective (on resume): Implement structured claim extraction from `GeneratedAnswer.answer_text`, producing a list of atomic, verifiable claims as input for the hallucination verifier (M5). ADR-M4-001 (verification unit = atomic medical claim) remains accepted and unaffected by the pause.
 
 ---
 
 ## Last Frozen / Completed Milestones
 
+**M3.2 Hybrid Retrieval — Runtime Bring-Up (Runtime Validation)**  
+Commit: `6d20da6` (`feat(retrieval): add M3.2 composition root bootstrap and tests`)  
+Details: Implemented the M3.2 composition root, `retrieval/bootstrap.py` (`build_hybrid_retriever()`), with dedicated tests in `tests/retrieval/test_bootstrap.py`. Real-artifact runtime smoke test executed successfully — `build_hybrid_retriever()` loaded the real MedCPT Query Encoder, the real BM25 index, the real FAISS index, and the real corpus (no mocks). Two real medical queries were run end-to-end through BM25 + MedCPT dense retrieval + RRF fusion + corpus resolution, each returning 5 correctly-ordered `HybridScoredDocument` results with no duplicate PMIDs and descending RRF ordering. No runtime artifacts were regenerated during validation. Automated test suite: 138 tests passing (up from 125, after the bootstrap tests were added).
+
 **ACR-003 — BM25 Artifact Filename & Configuration Correction**  
-Implementation: Complete | Validation: Complete | Commit: Pending  
-Details: Corrected `bm25_index_filename` default to `bm25_index.pkl` in `config/settings.py` and updated `index/build_bm25.py` to consume `settings.bm25_index_filename`. Validation clean (125 tests passing, ruff, black, compileall). Not yet committed — see Repository Health below.
+Commit: `1c0f7c8` (`fix(index): resolve ACR-003 BM25 .pkl artifact filename; add project state/unified architecture docs and M4 verification schema`)  
+Details: Corrected `bm25_index_filename` default to `bm25_index.pkl` in `config/settings.py` and updated `index/build_bm25.py` to consume `settings.bm25_index_filename`. Validation clean (125 tests passing, ruff, black, compileall). Committed and closed.
 
 **M3.1.3 Live Execution — FAISS Dense Index Building**  
 Completed at: 2026-08-06  
@@ -47,7 +52,8 @@ Frozen at: 2026-08-02
 
 | Tag | Milestone | Commit / Status |
 |---|---|---|
-| *(untagged)* | ACR-003 BM25 Config Correction | 🔄 Implementation + validation complete; commit pending |
+| *(untagged)* | M3.2 Hybrid Retrieval — Runtime Bring-Up | ✅ Runtime validation complete (`6d20da6`) — real BM25/FAISS/MedCPT/RRF end-to-end, 138 tests passing |
+| *(untagged)* | ACR-003 BM25 Config Correction | ✅ Complete and committed (`1c0f7c8`) |
 | *(untagged)* | M3.1.3 FAISS Dense Index Build | ✅ Complete (171,858 vectors, dim=768, `faiss_index.bin`) |
 | *(untagged)* | M3.1.2 BM25 Lexical Index Build | ✅ Complete (171,858 documents, `bm25_index.pkl`) |
 | *(untagged)* | M3.1.1 Live Corpus Build | ✅ Complete (171,858 documents, Checksum `b96c9061...`) |
@@ -69,10 +75,11 @@ Frozen at: 2026-08-02
 | `index/` FAISS pmids (ACR-001) | ✅ Passing | `tests/index/test_faiss_pipeline_acr001.py` |
 | `index/` Corpus Construction (M3.1.1) | ✅ Verified Live | Successfully generated `corpus.jsonl` (171,858 docs) |
 | `retrieval/` dense retriever | ✅ Passing | `tests/retrieval/test_dense.py` |
+| `retrieval/` composition root (M3.2 bootstrap) | ✅ Passing + Verified Live | `tests/retrieval/test_bootstrap.py` (mocked); real-artifact runtime smoke test executed successfully outside CI |
 | `generation/` LLM loader | ✅ Passing | `tests/generation/test_llm_loader.py` |
 | `generation/` context builder | ✅ Passing | `tests/generation/test_context_builder.py` |
 | `generation/` generator | ✅ Passing | `tests/generator/test_generator.py` |
-| `verification/` | ⏸️ Paused | ADR-M4-001 accepted; claim extraction design work paused pending M3.2 runtime bring-up |
+| `verification/` | ⏸️ Paused | ADR-M4-001 accepted; M3.2 runtime validation is complete, M4 remains paused pending explicit resumption |
 | `evaluation/` | ⬜ Not yet built | Stubs only |
 | `app/` | ⬜ Not yet built | Stub only |
 
@@ -82,37 +89,18 @@ Frozen at: 2026-08-02
 
 | Check | Status |
 |---|---|
-| Working tree | ⚠️ **Not clean** — pending commit (see below) |
+| Working tree | ✅ Clean |
 | Lint (ruff) | ✅ Passing (`ruff check .` clean) |
 | Formatting (black) | ✅ Passing (`black --check .` clean) |
-| Test suite | ✅ Passing (125/125 tests passing) |
+| Test suite | ✅ Passing (138/138 tests passing — up from 125 after M3.2 bootstrap tests were added) |
 | Compilation | ✅ Passing (`python -m compileall .` clean) |
 | Frozen artifacts | ✅ **Corpus & Indexes Generated!** `corpus.jsonl` (171,858 records), `bm25_index.pkl` (171,858 docs), and `faiss_index.bin` (171,858 vectors, dim=768) present. |
-
-**Pending working-tree changes (uncommitted):**
-
-*Intentional — ACR-003 implementation:*
-- `ARCHITECTURE_CHANGE_REQUESTS.md`
-- `config/settings.py`
-- `index/build_bm25.py`
-- `tests/test_bm25_pipeline.py`
-
-*Untracked:*
-- `PROJECT_STATE.md`
-- `UNIFIED_ARCHITECTURE.md`
-- `schemas/verification.py`
-
-None of the above have been committed. Repository cleanup/commit is outstanding before the working tree can be described as clean.
 
 ---
 
 ## Open ACRs
 
-| ID | Title | Status |
-|---|---|---|
-| ACR-003 | BM25 Artifact Filename & Configuration Correction | 🔄 Implementation: Complete · Validation: Complete · Commit: Pending |
-
-ACR-001 and ACR-002 remain closed.
+*None.* ACR-001, ACR-002, and ACR-003 are closed.
 
 ---
 
@@ -137,14 +125,16 @@ ACR-001 and ACR-002 remain closed.
 2. **BM25 and FAISS indexes generated on live corpus.**
    - BM25 lexical index built on 171,858 documents (`data/indexes/bm25_index.pkl`).
    - FAISS dense index built on 171,858 vectors (dim=768, `data/indexes/faiss_index.bin`).
-3. **ACR-003 BM25 configuration correction implemented and validated (commit pending).**
-   - Default filename corrected to `bm25_index.pkl`, build path wired to `settings.bm25_index_filename`, and regression test suite added. Validation clean (125/125 tests, ruff, black, compileall). Not yet committed — see Repository Health.
+3. **ACR-003 BM25 configuration correction implemented, validated, and committed.**
+   - Default filename corrected to `bm25_index.pkl`, build path wired to `settings.bm25_index_filename`, and regression test suite added. Validation clean (125/125 tests, ruff, black, compileall). Committed at `1c0f7c8`.
+4. **M3.2 HybridRetriever wiring/runtime bring-up completed and validated live.**
+   - `retrieval/bootstrap.py` (`build_hybrid_retriever()`) constructs a real `HybridRetriever` from settings and real artifacts. Validated end-to-end against the real MedCPT Query Encoder, real BM25 index, real FAISS index, and real corpus — two real medical queries executed successfully with correct RRF ordering and no duplicate PMIDs. Committed at `6d20da6`.
 
 ### Active limitations entering M3.2 runtime bring-up
-1. **No end-to-end integration path yet.** `HybridRetriever`, `Generator`, and `Verifier` require a runnable wiring/pipeline orchestrator.
+1. **`Generator` and `Verifier` still require a runnable wiring/pipeline orchestrator.** `HybridRetriever` now has one (`retrieval/bootstrap.py`); generation and verification do not yet have an equivalent composition root.
 2. **`PromptBuilder` context budget is prompt-only.** Token budgeting does not reserve headroom for `llm_max_new_tokens`.
-3. **No real model weights loaded yet.** Generation and dense retrieval have been tested using fakes; live model runs require GPU environment and model downloads.
-4. **M4 (Claim Extraction) is paused**, not progressing, pending completion of M3.2 runtime/integration validation against real corpus and index artifacts.
+3. **No real model weights loaded for generation yet.** Dense retrieval now runs against real MedCPT weights (validated live); LLM generation has still only been tested using fakes — live generation runs require GPU environment and model downloads.
+4. **M4 (Claim Extraction) remains paused.** M3.2 runtime validation is complete; M4 remains paused pending explicit resumption, not any remaining technical blocker.
 
 ---
 
