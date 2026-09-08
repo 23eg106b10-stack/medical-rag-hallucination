@@ -1,9 +1,9 @@
 # ARCHITECTURE_BASELINE
 
-**Frozen at:** Milestone M3.3 — LLM Generation  
-**Status:** Canonical  
-**Supersedes:** n/a (initial baseline)  
-**Next update trigger:** M4 freeze
+**Frozen at:** Milestone M4 — Claim Extraction<br>
+**Status:** Canonical<br>
+**Supersedes:** Milestone M3.3 baseline<br>
+**Next update trigger:** M5 freeze
 
 > This document is the canonical repository state after every frozen milestone.
 > It is rewritten — not appended — at each freeze point.
@@ -19,7 +19,7 @@
 | **Project name** | Medical RAG Hallucination Detection |
 | **Python version** | 3.11+ |
 | **Architecture version** | 1.0 |
-| **Frozen milestone** | M3.3 |
+| **Frozen milestone** | M4 |
 | **License** | MIT |
 
 ---
@@ -36,7 +36,7 @@
 | M3.2 | Hybrid retrieval (BM25 + FAISS + RRF) | ✅ Frozen |
 | M3.3 | LLM-based answer generation | ✅ Frozen |
 | — | Retriever integration (wiring layer) — unscheduled; see §10 | ⬜ Pending |
-| M4 | Claim extraction | ⬜ Pending |
+| M4 | Claim extraction | ✅ Frozen |
 | M5 | Hallucination verification | ⬜ Pending |
 | M6 | Confidence scoring | ⬜ Pending |
 | M7 | Evaluation & baselines | ⬜ Pending |
@@ -79,6 +79,7 @@ medical-rag-hallucination/
 │   ├── embedding.py               # EmbeddingMetadata (M3.1.3)
 │   ├── retrieval.py               # RetrievalHit, FusionResult, HybridScoredDocument (M3.2)
 │   ├── generation.py              # GeneratedAnswer (M3.3)
+│   ├── verification.py            # ExtractedClaim (M4)
 │   ├── requests.py                # (stub) Request schemas
 │   └── responses.py               # (stub) Response schemas
 │
@@ -88,10 +89,11 @@ medical-rag-hallucination/
 │   ├── generator.py               # Generator orchestrator + make_transformers_generate_fn
 │   └── llm_loader.py              # Model/tokenizer loading only (ADR-M3.3-001)
 │
-├── verification/                  # Hallucination verification (stub — M5+)
-│   ├── claim_extraction.py
-│   ├── verifier.py
-│   └── confidence.py
+├── verification/                  # Hallucination verification (M4 frozen; M5+ pending)
+│   ├── claim_extraction_prompts.py # Declarative prompt template constants (ADR-M4-003)
+│   ├── claim_extraction.py        # Parser & extraction orchestrator (ADR-M4-003)
+│   ├── verifier.py                # (stub — M5)
+│   └── confidence.py              # (stub — M6)
 │
 ├── evaluation/                    # Metrics and baselines (stub — M7+)
 │   ├── metrics.py
@@ -431,6 +433,49 @@ Full ACR text: [`ARCHITECTURE_CHANGE_REQUESTS.md`](./ARCHITECTURE_CHANGE_REQUEST
 
 ---
 
+### 5.6 M4 — Claim Extraction
+
+**Modules:** `verification/claim_extraction_prompts.py`, `verification/claim_extraction.py`, `schemas/verification.py`<br>
+**Entry point:** Not yet built (full verification pipeline orchestrator deferred to M5).<br>
+**Underlying model:** `meta-llama/Llama-3.1-8B-Instruct` (reused from M3.3 via `generation.llm_loader.load_generation_model`, per ADR-M3.3-001 and ADR-M4-003 §1)<br>
+**Decomposition mechanism:** LLM-based decomposition (`do_sample=False` greedy decoding, ADR-M4-003 §1, §2)
+
+#### Design principles
+
+- **Verification unit = atomic medical claim, per ADR-M4-001.** The verification unit throughout the verification pipeline is the individual atomic medical proposition rather than the natural-language sentence.
+- **Verification-side evidence attribution, per ADR-M4-002.** Claim extraction does not extract, assign, or output cited passage IDs. `ExtractedClaim` holds only `claim_text: str`. Evidence attribution is performed downstream during M5 NLI verification against `GeneratedAnswer.context`.
+- **Low-fragility plain-text output, per ADR-M4-003 §4.** The extraction model is prompted to emit one claim per line in plain text — explicitly NOT JSON or a delimited format — avoiding format-reliability failures on 8B quantized models.
+- **Strict separation of prompt constants and parsing logic, per ADR-M4-003 §3.** `verification/claim_extraction_prompts.py` contains only declarative prompt template constants. All line splitting, bullet stripping, fragment filtering, commentary filtering, and deduplication logic lives in `verification/claim_extraction.py`.
+- **Deterministic parsing and filtering contract, per ADR-M4-003 §5.**
+  1. Split raw output on newlines.
+  2. Strip each line of leading numbering/bullet markers (e.g. `1.`, `-`, `*`) and surrounding whitespace.
+  3. Discard blank lines.
+  4. Post-hoc strip inline citation markers (e.g. `[PMID: ...]`, `(PMID: ...)`, `(References: [PMID: ...])`). Citation stripping is not delegated to prompt compliance.
+  5. Discard incomplete fragments via observable string-level rules: discard if the line does not end in terminal sentence punctuation (`.`, `!`, `?` or trailing quote/parenthesis) or contains unbalanced brackets/parentheses.
+  6. Discard conversational / generation-process commentary (statements about the model's own response, behavior, apologies, or rephrasing offers; substantive claims regarding evidentiary uncertainty are retained).
+  7. Deduplicate via string-level normalization only: lowercase, strip punctuation, collapse whitespace, exact-match comparison. No semantic embeddings, stemming, or lemmatization.
+- **Atomicity and anaphora resolution are a generation-prompt contract, per ADR-M4-003 §6.** The extraction prompt requires the model to emit already-atomic, already-resolved propositions with anaphoric referents grounded. The parser performs no downstream semantic decomposition or atomicity detection.
+- **Claim-count safety bound (`MAX_CLAIMS = 35`), per ADR-M4-003 §7, §8.** Evaluated on the post-filter, post-dedup unique valid claim count. 0 valid claims is valid (e.g. answer is pure commentary); 1..35 valid claims is valid; >35 valid claims raises `ClaimExtractionError` with no silent truncation. Calibrated empirically against real pipeline answers (N=10 calibration max = 24, +45.8% safety margin, sitting above $\mu + 3\sigma$).
+- **Fail-loud on malformed output, per ADR-M4-003 §9.** If raw output yields 0 candidate lines after initial line-splitting and blank discard (e.g. empty or whitespace-only generation), `ClaimExtractionError` is raised. No silent fallback to treating the unparsed answer text as a single claim.
+
+#### Verification schema (`schemas/verification.py`)
+
+```python
+class ExtractedClaim(BaseModel):
+    claim_text: str
+```
+
+#### Failure boundaries
+
+| Condition | Behavior |
+|---|---|
+| Empty or whitespace-only extraction output (0 candidate lines) | `ClaimExtractionError` raised. No unparsed text fallback. |
+| Post-filter unique claims > 35 | `ClaimExtractionError` raised. No silent truncation to 35. |
+| Incomplete fragment or unclosed bracket/parenthesis | Line discarded by parser rule 5(a)/(b). |
+| Conversational / generation-process commentary | Line discarded by parser rule 5(c). |
+
+---
+
 ## 6. Frozen Artifact Set (M3.2 state)
 
 All of the following must be present and internally consistent before any retrieval can be attempted.
@@ -465,7 +510,7 @@ All configuration flows through `config/settings.py` (`pydantic-settings`, reads
 | `annotations_dir` | `Path("data/annotations")` | M1 | Annotations directory |
 | `indexes_dir` | `Path("data/indexes")` | M1 | Index artifact directory |
 | `outputs_dir` | `Path("outputs")` | M1 | Evaluation output directory |
-| `bm25_index_filename` | `"bm25_index.json"` | M3.1.2 | BM25 index filename |
+| `bm25_index_filename` | `"bm25_index.pkl"` | M3.1.2 | BM25 index filename (ACR-003) |
 | `faiss_index_filename` | `"faiss_index.bin"` | M3.1.3 | FAISS index filename |
 | `medcpt_model_name` | `"ncbi/MedCPT-Article-Encoder"` | M3.1.3 | Document-side encoder |
 | `embedding_batch_size` | `16` | M3.1.3 | MedCPT batch size |
@@ -475,6 +520,7 @@ All configuration flows through `config/settings.py` (`pydantic-settings`, reads
 | `llm_bnb_4bit_quant_type` | `"nf4"` | M3.3 | bitsandbytes quantization type |
 | `llm_bnb_4bit_compute_dtype` | `"float16"` | M3.3 | Compute dtype during 4-bit inference |
 | `llm_device_map` | `"auto"` | M3.3 | `from_pretrained` device placement |
+| `llm_quantized_layers_gpu_resident` | `False` | M3.3 | Enforces all 4-bit quantized layers GPU-resident (ACR-004) |
 | `llm_max_new_tokens` | `512` | M3.3 | Max tokens generated per call |
 | `llm_do_sample` | `False` | M3.3 | Greedy decoding by default (ADR-M3.3-004) |
 | `llm_context_window` | `3072` | M3.3 | Prompt token budget (see §5.5 Known Limitations) |
@@ -534,6 +580,7 @@ These standards apply globally. They are invariant across milestones unless an A
 | `EmbeddingMetadata` | `schemas/embedding.py` | FAISS index audit record |
 | `RetrievalHit`, `FusionResult`, `HybridScoredDocument` | `schemas/retrieval.py` | Retrieval-specific; carry ranking/fusion metadata |
 | `GeneratedAnswer` | `schemas/generation.py` | Pre-verification generation output; distinct from `AnswerResponse` |
+| `ExtractedClaim` | `schemas/verification.py` | Atomic medical claim verification unit (M4; ADR-M4-001, ADR-M4-002, ADR-M4-003) |
 
 Retrieval result schemas are separate from corpus schemas by design: retrieval results carry rank, score, and fusion metadata that has no place on a `CorpusDocument`.
 
@@ -545,6 +592,8 @@ Retrieval result schemas are separate from corpus schemas by design: retrieval r
 |---|---|---|---|
 | ACR-001 | M3.1.3 | Persist FAISS PMID Mapping (`faiss_pmids.json`) | Approved |
 | ACR-002 | M3.3 | Prompt Builder Contract Revision | Closed / Implemented |
+| ACR-003 | M3.1.2 | Correct BM25 Artifact Filename to .pkl | Closed / Implemented |
+| ACR-004 | M3.3 | Explicit GPU-Resident Placement for Quantized Decoder Layers | Approved / Implemented |
 
 Full ACR text: [`ARCHITECTURE_CHANGE_REQUESTS.md`](./ARCHITECTURE_CHANGE_REQUESTS.md)
 
@@ -561,6 +610,9 @@ Standalone architectural decisions (as opposed to change requests against alread
 | ADR-M3.3-002 | M3.3 | Prompt Template Ownership (`prompts.py` declarative-only) | Accepted |
 | ADR-M3.3-003 | M3.3 | Reserved — never assigned; number intentionally unused after architecture review | Reserved |
 | ADR-M3.3-004 | M3.3 | Deterministic Generation Configuration (`do_sample=False`) | Accepted |
+| ADR-M4-001 | M4 | Verification Unit = Atomic Medical Claim | Accepted |
+| ADR-M4-002 | M4 | Verification-Side Evidence Attribution | Accepted |
+| ADR-M4-003 | M4 | Atomic Claim Extraction Specification (LLM-Based Decomposition) | Accepted |
 
 Full ADR text: [`DECISIONS_LOG.md`](./DECISIONS_LOG.md)
 
@@ -573,8 +625,8 @@ The following modules exist as stubs only. Their architecture is not frozen and 
 | Module | Planned milestone |
 |---|---|
 | Retriever wiring layer (real loading + DI assembly into a runnable `HybridRetriever`) | Unscheduled — orphaned by the M3.3 renumbering; needs a milestone slot assigned |
-| Full generation pipeline wiring (`HybridRetriever` output → `Generator` input, end to end) | Deferred until Claim Extraction / Verification exist |
-| `verification/claim_extraction.py` | M4 |
+| Full generation pipeline wiring (`HybridRetriever` output → `Generator` input, end to end) | Deferred until Verification exists |
+| `verification/claim_extraction.py` (implementation) | M4 implementation (architecture frozen) |
 | `verification/verifier.py`, `verification/confidence.py` | M5–M6 |
 | `evaluation/metrics.py`, `evaluation/run_baselines.py` | M7 |
 | `app/` (Streamlit) | M8 |

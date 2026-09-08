@@ -27,6 +27,27 @@ from transformers import AutoModelForCausalLM, AutoTokenizer, BitsAndBytesConfig
 logger = logging.getLogger(__name__)
 
 
+# Explicit device map validated per ACR-004 for
+# meta-llama/Llama-3.1-8B-Instruct (LlamaForCausalLM) on VRAM-constrained
+# hardware (RTX 3050 6GB). Keeps every Linear4bit (4-bit quantized)
+# module GPU-resident. device_map="auto" was found to dispatch some
+# decoder layers to CPU on this hardware, which fails at forward time:
+# Accelerate's AlignDevicesHook cannot move a Linear4bit module's
+# QuantState to CUDA in that configuration (meta-tensor error).
+# model.embed_tokens and lm_head are plain, unquantized tensors and can
+# be safely CPU-resident. This map is specific to the validated
+# Llama-3.1-8B-Instruct / LlamaForCausalLM module structure and must not
+# be treated as a general-purpose placement strategy for other model
+# architectures — see ACR-004.
+_ACR_004_EXPLICIT_DEVICE_MAP: dict[str, str] = {
+    "model.embed_tokens": "cpu",
+    "model.layers": "cuda:0",
+    "model.norm": "cuda:0",
+    "model.rotary_emb": "cuda:0",
+    "lm_head": "cpu",
+}
+
+
 def load_generation_model(
     model_name: str,
     load_in_4bit: bool,
@@ -34,6 +55,7 @@ def load_generation_model(
     bnb_4bit_compute_dtype: str,
     device_map: str,
     hf_token: str = "",
+    quantized_layers_gpu_resident: bool = False,
 ) -> tuple[Any, Any]:
     """Load the quantized generation tokenizer and model per ADR-M3.3-001.
 
@@ -49,6 +71,21 @@ def load_generation_model(
             ``"auto"``).
         hf_token: Hugging Face Hub token, required for gated model
             repositories. Empty string is treated as "no token".
+        quantized_layers_gpu_resident: When True, ignore ``device_map``
+            and use the explicit, ACR-004-validated device map that
+            keeps all Linear4bit (4-bit quantized) modules GPU-resident,
+            placing only model.embed_tokens and lm_head on CPU. This also
+            sets ``llm_int8_enable_fp32_cpu_offload=True`` on the
+            BitsAndBytesConfig passed to ``from_pretrained`` — this is
+            the Transformers-level validation gate required to permit
+            any CPU/disk entry in a device_map under this project's
+            installed Transformers version; it does not change the
+            quantization scheme, which remains 4-bit NF4 throughout.
+            Validated specifically for meta-llama/Llama-3.1-8B-Instruct /
+            LlamaForCausalLM on VRAM-constrained hardware. When False
+            (default), both ``device_map`` and ``BitsAndBytesConfig`` are
+            passed through/constructed exactly as before, preserving
+            prior behavior with zero change.
 
     Returns:
         A ``(tokenizer, model)`` tuple.
@@ -72,7 +109,12 @@ def load_generation_model(
         load_in_4bit=load_in_4bit,
         bnb_4bit_quant_type=bnb_4bit_quant_type,
         bnb_4bit_compute_dtype=compute_dtype,
+        llm_int8_enable_fp32_cpu_offload=quantized_layers_gpu_resident,
     )
+
+    resolved_device_map: str | dict[str, str] = device_map
+    if quantized_layers_gpu_resident:
+        resolved_device_map = _ACR_004_EXPLICIT_DEVICE_MAP
 
     token = hf_token or None
     try:
@@ -80,7 +122,7 @@ def load_generation_model(
         model = AutoModelForCausalLM.from_pretrained(
             model_name,
             quantization_config=quantization_config,
-            device_map=device_map,
+            device_map=resolved_device_map,
             token=token,
         )
     except Exception as exc:

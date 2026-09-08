@@ -109,3 +109,15 @@ def test_unknown_env_vars_are_ignored(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SOME_UNRELATED_VARIABLE", "whatever")
     settings = get_settings()
     assert isinstance(settings, Settings)
+
+
+def test_llm_quantized_layers_gpu_resident_defaults_to_false(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """llm_quantized_layers_gpu_resident defaults to False (ACR-004) —
+    preserves existing device_map passthrough behavior unless explicitly
+    enabled.
+    """
+    monkeypatch.delenv("LLM_QUANTIZED_LAYERS_GPU_RESIDENT", raising=False)
+    settings = get_settings()
+    assert settings.llm_quantized_layers_gpu_resident is False

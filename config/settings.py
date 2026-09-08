@@ -78,6 +78,23 @@ class Settings(BaseSettings):
     llm_bnb_4bit_compute_dtype: str = "float16"
     llm_device_map: str = "auto"
 
+    # Per ACR-004: explicit GPU-resident placement for quantized decoder
+    # layers, validated specifically for Llama-3.1-8B-Instruct /
+    # LlamaForCausalLM on VRAM-constrained hardware (RTX 3050 6GB).
+    # device_map="auto" was found to dispatch Linear4bit modules to CPU
+    # on this hardware, which fails at forward time (meta-tensor error
+    # when Accelerate attempts to move a Linear4bit module's QuantState
+    # to CUDA). When True, generation.llm_loader constructs the one
+    # validated explicit device map internally instead of using
+    # llm_device_map, and correspondingly sets the required Transformers-
+    # level CPU/disk-offload validation flag on BitsAndBytesConfig — the
+    # two are one coupled behavior, not independently configurable.
+    # Default False preserves the existing device_map passthrough
+    # behavior exactly — no regression for any environment where "auto"
+    # already works. This is a narrow behavioral switch, not a
+    # generalized or configurable device-map mechanism.
+    llm_quantized_layers_gpu_resident: bool = False
+
     # Decoding parameters, consumed by generation.generator.make_transformers_generate_fn.
     # do_sample=False (greedy) is a provisional default pending a formal
     # decoding-determinism ADR — see the M3.3 implementation report.

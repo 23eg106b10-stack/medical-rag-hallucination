@@ -7,14 +7,14 @@
 
 ## Current Milestone
 
-**M3.2 Hybrid Retrieval — Runtime Bring-Up**
-Status: ✅ Runtime validation complete
-Objective: Validate the already-frozen M3.2 Hybrid Retrieval architecture against real, live-built artifacts (corpus, BM25 index, FAISS index) rather than the fakes/mocks used at freeze time. Composition root implemented (`retrieval/bootstrap.py`, `tests/retrieval/test_bootstrap.py`) and validated end-to-end against real artifacts — see Last Frozen/Completed Milestones below.
-
-**M4 — Claim Extraction (paused)**
-Status: ⏸️ Paused
-Reason: M3.2 runtime validation is complete; M4 remains paused pending explicit resumption.
-Objective (on resume): Implement structured claim extraction from `GeneratedAnswer.answer_text`, producing a list of atomic, verifiable claims as input for the hallucination verifier (M5). ADR-M4-001 (verification unit = atomic medical claim) remains accepted and unaffected by the pause.
+**M4 — Claim Extraction (Architecture Freeze)**
+Status: ✅ Architecture Frozen (Implementation Pending)
+Details:
+- ADR-M4-001 (Verification Unit = Atomic Medical Claim) accepted.
+- ADR-M4-002 (Verification-Side Evidence Attribution & Claim Schema Stability) accepted.
+- ADR-M4-003 (Atomic Claim Extraction Specification: LLM-based decomposition, greedy decoding, low-fragility plain-text output, deterministic string filtering, MAX_CLAIMS=35) accepted.
+- Calibration analysis reconciled across N=10 real pipeline `GeneratedAnswer` samples (`m4_calibration_reconciliation.md`), empirically justifying MAX_CLAIMS=35 (+45.8% margin above observed peak of 24) and resolving the ~0.02 tok/s anomaly as a sleep-suspension artifact (active E2E generation verified at 1.57–2.11 tok/s).
+- Next: M4 implementation (`verification/claim_extraction_prompts.py`, `verification/claim_extraction.py`, unit tests).
 
 ---
 
@@ -52,6 +52,8 @@ Frozen at: 2026-08-02
 
 | Tag | Milestone | Commit / Status |
 |---|---|---|
+| *(untagged)* | M4 — Claim Extraction (Architecture Freeze) | ✅ Architecture Frozen (ADR-M4-001, ADR-M4-002, ADR-M4-003) |
+| *(untagged)* | ACR-004 Explicit GPU Layer Placement | ✅ Validated and implemented |
 | *(untagged)* | M3.2 Hybrid Retrieval — Runtime Bring-Up | ✅ Runtime validation complete (`6d20da6`) — real BM25/FAISS/MedCPT/RRF end-to-end, 138 tests passing |
 | *(untagged)* | ACR-003 BM25 Config Correction | ✅ Complete and committed (`1c0f7c8`) |
 | *(untagged)* | M3.1.3 FAISS Dense Index Build | ✅ Complete (171,858 vectors, dim=768, `faiss_index.bin`) |
@@ -69,7 +71,7 @@ Frozen at: 2026-08-02
 | Layer | Status | Notes |
 |---|---|---|
 | `config/` (settings, exceptions) | ✅ Passing | `test_config.py`, `test_settings.py`, `test_exceptions.py` |
-| `schemas/` | ✅ Passing | `test_schemas.py` |
+| `schemas/` | ✅ Passing | `test_schemas.py`, `schemas/verification.py` |
 | `index/` BM25 pipeline & build | ✅ Passing | `test_bm25_pipeline.py` (including ACR-003 regression tests), `test_bm25_tokenizer.py` |
 | `index/` FAISS pipeline | ✅ Passing | `test_faiss_pipeline.py`, `test_embedding_generator.py` |
 | `index/` FAISS pmids (ACR-001) | ✅ Passing | `tests/index/test_faiss_pipeline_acr001.py` |
@@ -79,7 +81,7 @@ Frozen at: 2026-08-02
 | `generation/` LLM loader | ✅ Passing | `tests/generation/test_llm_loader.py` |
 | `generation/` context builder | ✅ Passing | `tests/generation/test_context_builder.py` |
 | `generation/` generator | ✅ Passing | `tests/generator/test_generator.py` |
-| `verification/` | ⏸️ Paused | ADR-M4-001 accepted; M3.2 runtime validation is complete, M4 remains paused pending explicit resumption |
+| `verification/` | 🟡 Architecture Frozen | ADR-M4-001, ADR-M4-002, ADR-M4-003 accepted; `schemas/verification.py` present; implementation pending |
 | `evaluation/` | ⬜ Not yet built | Stubs only |
 | `app/` | ⬜ Not yet built | Stub only |
 
@@ -100,7 +102,7 @@ Frozen at: 2026-08-02
 
 ## Open ACRs
 
-*None.* ACR-001, ACR-002, and ACR-003 are closed.
+*None.* ACR-001, ACR-002, ACR-003, and ACR-004 are closed / implemented.
 
 ---
 
@@ -114,6 +116,8 @@ Frozen at: 2026-08-02
 | ADR-M3.3-003 | Reserved — never assigned | Reserved |
 | ADR-M3.3-004 | Deterministic Generation (`do_sample=False`) | ✅ Accepted |
 | ADR-M4-001 | Verification Unit = Atomic Medical Claim | ✅ Accepted |
+| ADR-M4-002 | Verification-Side Evidence Attribution | ✅ Accepted |
+| ADR-M4-003 | Atomic Claim Extraction Specification | ✅ Accepted |
 
 ---
 
@@ -129,12 +133,18 @@ Frozen at: 2026-08-02
    - Default filename corrected to `bm25_index.pkl`, build path wired to `settings.bm25_index_filename`, and regression test suite added. Validation clean (125/125 tests, ruff, black, compileall). Committed at `1c0f7c8`.
 4. **M3.2 HybridRetriever wiring/runtime bring-up completed and validated live.**
    - `retrieval/bootstrap.py` (`build_hybrid_retriever()`) constructs a real `HybridRetriever` from settings and real artifacts. Validated end-to-end against the real MedCPT Query Encoder, real BM25 index, real FAISS index, and real corpus — two real medical queries executed successfully with correct RRF ordering and no duplicate PMIDs. Committed at `6d20da6`.
+5. **ACR-004 explicit GPU layer placement and live LLM generation bring-up completed.**
+   - Validated explicit device map placement with 224/224 Linear4bit modules on CUDA and 0 on CPU.
+   - Live E2E generation verified on target RTX 3050 6GB hardware at ~1.76 tok/s across 10 diverse medical queries.
+6. **M4 Calibration completed and M4 Architecture frozen.**
+   - N=10 real pipeline GeneratedAnswer samples fully annotated across 7 claim extraction metrics (`m4_calibration_reconciliation.md`).
+   - MAX_CLAIMS=35 empirically established (observed max = 24, +45.8% safety margin).
+   - ADR-M4-003 accepted, specifying LLM-based decomposition, greedy decoding, plain-text one-claim-per-line contract, deterministic string filtering, and fail-loud bounds.
 
-### Active limitations entering M3.2 runtime bring-up
-1. **`Generator` and `Verifier` still require a runnable wiring/pipeline orchestrator.** `HybridRetriever` now has one (`retrieval/bootstrap.py`); generation and verification do not yet have an equivalent composition root.
+### Active limitations entering M4 implementation
+1. **M4 Implementation Pending.** Claim extraction parser (`verification/claim_extraction.py`), prompt template (`verification/claim_extraction_prompts.py`), and test suite to be implemented against frozen ADR-M4-003.
 2. **`PromptBuilder` context budget is prompt-only.** Token budgeting does not reserve headroom for `llm_max_new_tokens`.
-3. **No real model weights loaded for generation yet.** Dense retrieval now runs against real MedCPT weights (validated live); LLM generation has still only been tested using fakes — live generation runs require GPU environment and model downloads.
-4. **M4 (Claim Extraction) remains paused.** M3.2 runtime validation is complete; M4 remains paused pending explicit resumption, not any remaining technical blocker.
+3. **Full verification pipeline wiring orchestrator.** Retriever has one (`retrieval/bootstrap.py`); generation has `generation/bootstrap.py`; verification pipeline orchestrator deferred to M5.
 
 ---
 

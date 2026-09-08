@@ -142,3 +142,155 @@ Implemented
   corpus, or FAISS artifacts) is regenerated, moved, or renamed by this
   change — the artifact was already correct; only the code path that
   names it was wrong.
+
+---
+
+## ACR-004
+**Title:** Explicit GPU-Resident Placement for Quantized Decoder Layers (Llama-3.1-8B-Instruct, 4-bit NF4)
+
+**Affected milestone:**
+M3.3 (frozen)
+
+**Reason:**
+The frozen loader's `device_map="auto"` was found, on the project's
+actual RTX 3050 6GB target hardware, to dispatch some `Linear4bit`
+(4-bit quantized) decoder layers to CPU. At forward time, Accelerate's
+`AlignDevicesHook` attempts to move such a module's `QuantState` to
+CUDA, which fails with `NotImplementedError: Cannot copy out of meta
+tensor; no data!`. This occurred on Transformers 5.16.1, Accelerate
+1.14.0, and bitsandbytes 0.50.2, and was confirmed independent of
+`low_cpu_mem_usage`, which was tested directly and produced the
+identical failure. No `Linear4bit` module can be placed on a non-CUDA
+device under this stack; this constraint was never explicit in the
+frozen architecture, only implicitly assumed to be satisfied by `"auto"`
+placement — an assumption this hardware disproves.
+
+An explicit device map was independently validated on the target
+hardware and confirmed to: load the model successfully; place 224/224
+`Linear4bit` modules on CUDA and 0 on CPU; complete a direct forward
+pass; produce identical output across two deterministic short
+generations; and successfully complete a full generation using the
+configured `llm_max_new_tokens` value (validated at 512 tokens).
+
+**Decision:**
+`config/settings.py` gains one new field,
+`llm_quantized_layers_gpu_resident: bool = False`, describing the
+required behavior — all quantized decoder layers remain GPU-resident —
+rather than exposing any device-map mechanism through configuration.
+`generation.llm_loader.load_generation_model` gains a corresponding
+`quantized_layers_gpu_resident: bool = False` parameter; when `True`, it
+constructs and applies the single validated explicit device map
+internally for `Llama-3.1-8B-Instruct` / `LlamaForCausalLM`, overriding
+the passed `device_map` string for that call only. When `False` (the
+default), behavior is unchanged from the current frozen implementation.
+
+`generation.llm_loader.load_generation_model` also sets
+`llm_int8_enable_fp32_cpu_offload=True` on the `BitsAndBytesConfig`
+passed to `from_pretrained` whenever
+`quantized_layers_gpu_resident=True`. This is a Transformers-level
+validation gate — confirmed by direct source inspection of the installed
+Transformers 5.16.1 (`transformers/quantizers/quantizer_bnb_4bit.py`,
+`Bnb4BitHfQuantizer.validate_environment`) — required to permit any
+CPU/disk entry in a device_map at all under this dependency stack.
+**This does not change the project's quantization scheme.** The model
+remains 4-bit NF4 throughout; `BitsAndBytesConfig.quantization_method()`
+derives quantization mode independently from `load_in_4bit` /
+`bnb_4bit_quant_type`, confirmed by direct source inspection to be
+unaffected by this flag. The flag's name is a legacy artifact of its
+original int8-only implementation, reused for 4-bit CPU-offload
+validation without a differently-named 4-bit-specific equivalent
+existing in this Transformers version. The explicit device map and this
+flag are one coupled configuration, driven by a single parameter, and
+must never become independently configurable.
+
+The validated explicit map:
+
+```python
+{
+    "model.embed_tokens": "cpu",
+    "model.layers": "cuda:0",
+    "model.norm": "cuda:0",
+    "model.rotary_emb": "cuda:0",
+    "lm_head": "cpu",
+}
+```
+
+No change is made to: the inference backend (Transformers +
+bitsandbytes), the quantization scheme (4-bit NF4), compute dtype
+(float16), the model (`meta-llama/Llama-3.1-8B-Instruct`), deterministic
+generation (`do_sample=False`), or any `Generator` / `GeneratedAnswer` /
+`PromptBuilder` contract.
+
+**Rationale:**
+- The problem is specifically CPU dispatch of quantized `Linear4bit`
+  modules, not device placement in general — `model.embed_tokens` and
+  `lm_head` are plain, unquantized tensors and can be safely
+  CPU-resident without triggering the `QuantState`/meta-tensor failure.
+- The Settings field names the architectural guarantee being enforced
+  (quantized layers remain GPU-resident), not the placement mechanism
+  used to enforce it, keeping the configuration surface narrow and
+  intentional rather than a generalized device-map system.
+- This is a mid-milestone correction to an underspecified device-
+  placement gap in already-frozen M3.3 output, not a new architectural
+  decision — the backend, quantization scheme, and model are all
+  unchanged, consistent with the ACR/ADR split already established in
+  `DECISIONS_LOG.md` and with the precedent of ACR-002 and ACR-003.
+- The explicit map is coupled to `LlamaForCausalLM`'s specific module
+  names and must not be presented as a universal placement abstraction
+  for other model architectures.
+- The original implementation of this ACR carried forward the explicit
+  device map but omitted this required flag, causing real-hardware
+  validation to fail with the identical error the pre-ACR-004
+  configuration produced. This was corrected after a read-only source
+  inspection of the exact installed Transformers version established,
+  with certainty, the mechanism and scope of the required flag.
+
+**Status:**
+Approved
+
+**Implementation:**
+Implemented
+
+**Affected files:**
+- `config/settings.py`
+- `generation/llm_loader.py`
+- `tests/test_llm_loader.py`
+- `tests/test_settings.py`
+
+**Explicitly not modified:**
+- `ARCHITECTURE_BASELINE.md` (corrected at next freeze, per §11)
+- `DECISIONS_LOG.md`
+- `generation/generator.py`
+- `generation/context_builder.py`
+- `generation/prompts.py`
+- `schemas/generation.py`
+- `PROJECT_STATE.md`
+
+**Operational constraint (recorded, non-gating):**
+The validated configuration completed a full generation at the
+configured `llm_max_new_tokens` value (512 tokens validated) with a
+tight remaining VRAM margin on the RTX 3050 6GB target. Future increases
+to `llm_context_window`, `llm_max_new_tokens`, or the number of
+retrieved documents could exhaust this margin and reintroduce placement
+failure. This is an operational characteristic of the current
+configuration on this hardware, not a defect in this correction, and is
+not part of the acceptance criteria below.
+
+**Acceptance criteria:**
+- Model constructs successfully with `quantized_layers_gpu_resident=True`.
+- 0 of 224 `Linear4bit` modules report a non-CUDA device.
+- Direct forward pass succeeds.
+- A short deterministic generation (`do_sample=False`) produces identical
+  output across two consecutive runs.
+- Successful completion of a full generation using the configured
+  `llm_max_new_tokens` value (validated at 512 tokens).
+- All criteria validated on the actual target environment; not a CI-gated
+  requirement.
+
+**Explicitly out of scope:**
+- Automatic VRAM detection.
+- A generalized or configurable device-map mechanism.
+- Support for model architectures other than the validated
+  `LlamaForCausalLM` structure.
+- Any change to inference backend, model identity, quantization scheme,
+  or deterministic generation behavior.

@@ -142,8 +142,7 @@ class _FakeShapeArray(list):
 
 
 class _FakeInputs(dict):
-    def to(self, device):
-        return self
+    """Stand-in for tokenizer output. Does NOT define .to()."""
 
 
 class _FakeHFTokenizer:
@@ -189,3 +188,36 @@ def test_transformers_generate_fn_slices_off_prompt_tokens():
     assert captured["do_sample"] is True
     # 3 prompt tokens sliced off the front of [1,2,3,4,5] -> [4,5]
     assert captured["decoded_ids"] == [4, 5]
+
+
+def test_transformers_generate_fn_does_not_call_to_on_tokenizer_inputs():
+    """Regression test: make_transformers_generate_fn must not call
+    .to(model.device) on tokenizer outputs. Under offloaded device maps
+    (e.g. ACR-004), model.device resolves to 'meta', which causes
+    model.generate to fail with 'Tensor.item() cannot be called on meta
+    tensors'. Tokenizer outputs must remain on CPU so Accelerate's
+    hooks handle device dispatch.
+    """
+
+    class _StrictInputs(dict):
+        def to(self, *args, **kwargs):
+            raise AssertionError(".to() must not be called on tokenizer inputs")
+
+    class _StrictTokenizer:
+        def __call__(self, prompt, return_tensors=None):
+            assert return_tensors == "pt"
+            return _StrictInputs(input_ids=_FakeShapeArray([[1, 2, 3]]))
+
+        def decode(self, ids, skip_special_tokens=True):
+            return "decoded"
+
+    class _MetaDeviceModel:
+        device = "meta"
+
+        def generate(self, **kwargs):
+            assert isinstance(kwargs.get("input_ids"), _FakeShapeArray)
+            return [[1, 2, 3, 4]]
+
+    generate_fn = make_transformers_generate_fn(max_new_tokens=5, do_sample=False)
+    result = generate_fn("prompt", _StrictTokenizer(), _MetaDeviceModel())
+    assert result == "decoded"

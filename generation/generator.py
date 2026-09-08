@@ -122,7 +122,7 @@ def make_transformers_generate_fn(
     """
 
     def _generate_fn(prompt: str, tokenizer: Any, model: Any) -> str:
-        inputs = tokenizer(prompt, return_tensors="pt").to(model.device)
+        inputs = tokenizer(prompt, return_tensors="pt")
         output_ids = model.generate(
             **inputs,
             max_new_tokens=max_new_tokens,
