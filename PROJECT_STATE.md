@@ -7,15 +7,21 @@
 
 ## Current Milestone
 
-**M6 — Confidence Scoring (Architecture & Specification)**
-Status: ⬜ Pending Architecture Alignment
+**M6 — Confidence Scoring (Implementation Pending)**
+Status: 🔒 Architecture Frozen (Implementation Pending)
 Details:
-- Verification results produced by M5 (`list[ClaimVerification]`) will be consumed by confidence scoring.
-- Next: M6 architecture proposal and specification.
+- Architecture frozen under ADR-M6-001..005.
+- Deterministic pure function `score_confidence(...)` over frozen M5 `list[ClaimVerification]`.
+- Contradiction hard ceiling, UNVERIFIABLE denominator dilution, zero-claim sentinel semantics, `ConfidenceResult` counts-only schema.
+- Next: M6 implementation (`schemas/confidence_result.py`, `verification/confidence.py`, settings, and tests).
 
 ---
 
 ## Last Frozen / Completed Milestones
+
+**M6 — Confidence Scoring (Architecture Freeze)**  
+Git tag: `m6-arch-frozen`  
+Details: Architecture formally frozen under ADR-M6-001 through ADR-M6-005. Module-level pure function `score_confidence(...)` over frozen M5 `list[ClaimVerification]`. Frozen mechanisms: verdict-count base score, contradiction hard ceiling (provisional 0.2), UNVERIFIABLE denominator dilution, level categorization (HIGH >= 0.8, MEDIUM >= 0.5, else LOW, provisional), zero-claim sentinel (`score=None`, `level=NOT_APPLICABLE`). Output schema `ConfidenceResult` with diagnostic counts and invariant checking. Local `ConfidenceInputError` exception boundary. No new model, inference, batching, or orchestration class. Implementation deferred to implementation phase.
 
 **M5 — Hallucination Verification**  
 Git tag: `m5-frozen`  
@@ -58,6 +64,7 @@ Frozen at: 2026-08-02
 
 | Tag | Milestone | Commit / Status |
 |---|---|---|
+| `m6-arch-frozen` | M6 — Confidence Scoring (Architecture) | 🔒 Architecture frozen (ADR-M6-001..005) |
 | `m5-frozen` | M5 — Hallucination Verification | ✅ Complete and frozen |
 | `m4-frozen` | M4 — Claim Extraction | `bd95774` |
 | *(untagged)* | ACR-004 Explicit GPU Layer Placement | ✅ Validated and implemented |
@@ -129,6 +136,11 @@ Frozen at: 2026-08-02
 | ADR-M5-002 | Evidence Aggregation Policy and Contradiction Priority | ✅ Accepted |
 | ADR-M5-003 | NLI Cross-Encoder Inference and Public API Contract | ✅ Accepted |
 | ADR-M5-004 | Verification Orchestration and PMID Ownership | ✅ Accepted |
+| ADR-M6-001 | Contradiction Hard-Ceiling Policy | ✅ Accepted |
+| ADR-M6-002 | Unverifiable Claims via Denominator Dilution | ✅ Accepted |
+| ADR-M6-003 | Verdict-Count-Based Scoring; NLI Probabilities Excluded from Frozen Formula | ✅ Accepted |
+| ADR-M6-004 | M6 Output Schema and Zero-Claim Sentinel Semantics | ✅ Accepted |
+| ADR-M6-005 | Confidence Thresholds Provisional Pending Ground-Truth Evaluation | ✅ Accepted |
 
 ---
 
@@ -157,11 +169,14 @@ Frozen at: 2026-08-02
 8. **M5 Hallucination Verification implemented, validated, and frozen.**
    - NLI model loader (`verification/nli_loader.py`), batched NLI inference (`verification/nli_inference.py`), pure evidence aggregation with contradiction priority (`verification/evidence_aggregation.py`), and verifier orchestrator (`verification/verifier.py`).
    - PubMedBERT cross-encoder (`pritamdeka/PubMedBERT-MNLI-MedNLI`) CPU execution, dynamic label mapping, exact 4-argument `run_nli_batch` API boundary, verifier-owned PMID attribution. Committed at `25d22ae` (`m5-frozen`).
+9. **M6 Confidence Scoring Architecture frozen.**
+   - Pure-function scoring architecture over frozen M5 verifications, contradiction hard-ceiling policy, unverifiable denominator dilution, zero-claim sentinel semantics, counts-only `ConfidenceResult` schema, and provisional threshold boundaries formally frozen under ADR-M6-001..005.
 
-### Active limitations entering M6
+### Active limitations entering M6 implementation
 1. **`PromptBuilder` context budget is prompt-only.** Token budgeting does not reserve headroom for `llm_max_new_tokens`.
-2. **M6 Confidence Scoring Architecture Pending.** Verification outputs from M5 (`list[ClaimVerification]`) to be integrated into answer-level confidence calculation.
+2. **M6 Confidence Scoring Implementation Pending.** Architecture is frozen (`m6-arch-frozen`; ADR-M6-001..005); implementation of `schemas/confidence_result.py`, `verification/confidence.py`, settings, and tests deferred to implementation phase.
 
 ---
 
 *Update this file at the start and end of every session, and immediately after any freeze.*
+

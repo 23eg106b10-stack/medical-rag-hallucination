@@ -1,9 +1,9 @@
 # ARCHITECTURE_BASELINE
 
-**Frozen at:** Milestone M5 — Hallucination Verification<br>
+**Frozen at:** Milestone M6 Architecture Freeze — Confidence Scoring<br>
 **Status:** Canonical<br>
-**Supersedes:** Milestone M4 baseline<br>
-**Next update trigger:** M6 freeze
+**Supersedes:** Milestone M5 baseline<br>
+**Next update trigger:** M6 implementation freeze
 
 > This document is the canonical repository state after every frozen milestone.
 > It is rewritten — not appended — at each freeze point.
@@ -19,7 +19,7 @@
 | **Project name** | Medical RAG Hallucination Detection |
 | **Python version** | 3.11+ |
 | **Architecture version** | 1.0 |
-| **Frozen milestone** | M5 |
+| **Frozen milestone** | M6 Architecture Freeze |
 | **License** | MIT |
 
 ---
@@ -38,7 +38,7 @@
 | — | Retriever integration (wiring layer) — unscheduled; see §10 | ⬜ Pending |
 | M4 | Claim extraction | ✅ Frozen |
 | M5 | Hallucination verification | ✅ Frozen |
-| M6 | Confidence scoring | ⬜ Pending |
+| M6 | Confidence scoring | 🔒 Architecture Frozen (Implementation Pending) |
 | M7 | Evaluation & baselines | ⬜ Pending |
 | M8 | Streamlit application | ⬜ Pending |
 
@@ -81,6 +81,7 @@ medical-rag-hallucination/
 │   ├── generation.py              # GeneratedAnswer (M3.3)
 │   ├── verification.py            # ExtractedClaim (M4)
 │   ├── verification_result.py     # NLIScore, EvidenceAttribution, ClaimVerification (M5)
+│   ├── confidence_result.py       # ConfidenceResult (M6 frozen architecture; implementation deferred)
 │   ├── requests.py                # (stub) Request schemas
 │   └── responses.py               # (stub) Response schemas
 │
@@ -90,14 +91,14 @@ medical-rag-hallucination/
 │   ├── generator.py               # Generator orchestrator + make_transformers_generate_fn
 │   └── llm_loader.py              # Model/tokenizer loading only (ADR-M3.3-001)
 │
-├── verification/                  # Hallucination verification (M4 & M5 frozen; M6+ pending)
+├── verification/                  # Hallucination verification (M4 & M5 frozen; M6 arch frozen)
 │   ├── claim_extraction_prompts.py # Declarative prompt template constants (ADR-M4-003)
 │   ├── claim_extraction.py        # Parser & extraction orchestrator (ADR-M4-003)
 │   ├── nli_loader.py              # NLI model loader & label mapping (ADR-M5-003)
 │   ├── nli_inference.py           # Batched NLI inference (ADR-M5-003)
 │   ├── evidence_aggregation.py    # Evidence aggregation & contradiction priority (ADR-M5-002)
 │   ├── verifier.py                # ClaimVerifier orchestration (ADR-M5-001, ADR-M5-004)
-│   └── confidence.py              # (stub — M6)
+│   └── confidence.py              # score_confidence (M6 frozen architecture; implementation deferred)
 │
 ├── evaluation/                    # Metrics and baselines (stub — M7+)
 │   ├── metrics.py
@@ -544,6 +545,60 @@ class ClaimVerification(BaseModel):
 
 ---
 
+### 5.6 Confidence Scoring (M6 Frozen Architecture — Implementation Deferred)
+
+#### Architectural Role & Scope
+M6 consumes the frozen M5 output `list[ClaimVerification]` read-only and produces an answer-level, deterministic, uncalibrated confidence result (`ConfidenceResult`).
+M6 runs **no model**, **no tokenizer**, **no batching**, and **no inference**. It is implemented as a module-level pure function `score_confidence(...)` in `verification/confidence.py`.
+
+#### Frozen Scoring Mechanism (ADR-M6-001, ADR-M6-002, ADR-M6-003)
+For $n$ total claims, $s$ supported claims, $c$ contradicted claims, and $u$ unverifiable claims:
+1. **Base score:** $s / n$ (verdict-count proportion).
+2. **Contradiction hard ceiling:** If $c > 0$, $\text{score} = \min(\text{base\_score}, \text{contradiction\_ceiling})$. Otherwise, $\text{score} = \text{base\_score}$.
+3. **UNVERIFIABLE treatment:** Contributes to denominator $n$ only; no explicit additional penalty; does NOT activate the contradiction ceiling.
+4. **Ceiling flag semantics:** `contradiction_ceiling_applied = (c > 0 and base_score > contradiction_ceiling)`. Evaluates to `True` strictly when the ceiling actively constrained the numerical score.
+5. **Level categorization:**
+   ```python
+   if score is None:
+       level = "NOT_APPLICABLE"
+   elif score >= level_high_threshold:
+       level = "HIGH"
+   elif score >= level_medium_threshold:
+       level = "MEDIUM"
+   else:
+       level = "LOW"
+   ```
+6. **Zero-claim behavior (ADR-M6-004):** For `verifications == []`, returns `score = None`, `level = "NOT_APPLICABLE"`, all counts `0`, and `contradiction_ceiling_applied = False`. `score = None` is never converted to `0.0`.
+7. **NLI probabilities excluded (ADR-M6-003):** `entailment_prob`, `neutral_prob`, and `contradiction_prob` are not read by the scoring formula; they remain in M5's audit trail.
+8. **Provisional parameters (ADR-M6-005):** Ceiling `0.2`, HIGH `0.8`, MEDIUM `0.5` are provisional and uncalibrated pending ground-truth evaluation in M7.
+
+#### Schemas (ADR-M6-004)
+```python
+# schemas/confidence_result.py — M6, frozen architecture
+class ConfidenceResult(BaseModel):
+    score: float | None
+    level: Literal["HIGH", "MEDIUM", "LOW", "NOT_APPLICABLE"]
+    total_claims: int
+    supported_count: int
+    contradicted_count: int
+    unverifiable_count: int
+    contradiction_ceiling_applied: bool
+```
+**Invariants:**
+- `total_claims == supported_count + contradicted_count + unverifiable_count`
+- All counts $\ge 0$
+- `score is None` $\iff$ `total_claims == 0` $\iff$ `level == "NOT_APPLICABLE"`
+- `total_claims == 0` $\implies$ `contradiction_ceiling_applied == False`
+- `total_claims > 0` $\implies$ `score` $\in [0.0, 1.0]$ and `level` $\in \{"\text{HIGH}", "\text{MEDIUM}", "\text{LOW}"\}$
+
+#### Failure Boundaries
+- Input type validation: `verifications` must be `list[ClaimVerification]`. Any invalid type raises `ConfidenceInputError`.
+- Threshold validation: Invariants $0.0 \le \text{ceiling} \le 1.0$, $0.0 \le \text{high} \le 1.0$, $0.0 \le \text{medium} \le 1.0$, and $\text{high} \ge \text{medium}$ are enforced. Any violation raises `ConfidenceInputError`.
+
+---
+
+---
+
 ## 6. Frozen Artifact Set (M3.2 state)
 
 All of the following must be present and internally consistent before any retrieval can be attempted.
@@ -601,6 +656,9 @@ All configuration flows through `config/settings.py` (`pydantic-settings`, reads
 | `verifier_nli_batch_size` | `32` | M5 | NLI inference batch size |
 | `verifier_entailment_threshold` | `0.5` | M5 | Threshold for SUPPORTED verdict |
 | `verifier_contradiction_threshold` | `0.5` | M5 | Threshold for CONTRADICTED verdict |
+| `confidence_contradiction_ceiling` | `0.2` | M6 (Arch Freeze) | Contradiction hard-ceiling score cap (provisional) |
+| `confidence_level_high_threshold` | `0.8` | M6 (Arch Freeze) | High confidence category threshold (provisional) |
+| `confidence_level_medium_threshold` | `0.5` | M6 (Arch Freeze) | Medium confidence category threshold (provisional) |
 
 ---
 
@@ -655,6 +713,7 @@ These standards apply globally. They are invariant across milestones unless an A
 | `GeneratedAnswer` | `schemas/generation.py` | Pre-verification generation output; distinct from `AnswerResponse` |
 | `ExtractedClaim` | `schemas/verification.py` | Atomic medical claim verification unit (M4; ADR-M4-001, ADR-M4-002, ADR-M4-003) |
 | `NLIScore`, `EvidenceAttribution`, `ClaimVerification` | `schemas/verification_result.py` | Verification results, evidence attribution & NLI scores (M5; ADR-M5-001..004) |
+| `ConfidenceResult` | `schemas/confidence_result.py` | Answer-level confidence result & diagnostic counts (M6; ADR-M6-001..005) |
 
 Retrieval result schemas are separate from corpus schemas by design: retrieval results carry rank, score, and fusion metadata that has no place on a `CorpusDocument`.
 
@@ -691,6 +750,11 @@ Standalone architectural decisions (as opposed to change requests against alread
 | ADR-M5-002 | M5 | Evidence Aggregation Policy and Contradiction Priority | Accepted |
 | ADR-M5-003 | M5 | NLI Cross-Encoder Inference and Public API Contract | Accepted |
 | ADR-M5-004 | M5 | Verification Orchestration and PMID Ownership | Accepted |
+| ADR-M6-001 | M6 | Contradiction Hard-Ceiling Policy | Accepted |
+| ADR-M6-002 | M6 | Unverifiable Claims via Denominator Dilution | Accepted |
+| ADR-M6-003 | M6 | Verdict-Count-Based Scoring; NLI Probabilities Excluded from Frozen Formula | Accepted |
+| ADR-M6-004 | M6 | M6 Output Schema and Zero-Claim Sentinel Semantics | Accepted |
+| ADR-M6-005 | M6 | Confidence Thresholds Provisional Pending Ground-Truth Evaluation | Accepted |
 
 Full ADR text: [`DECISIONS_LOG.md`](./DECISIONS_LOG.md)
 
@@ -700,13 +764,13 @@ Full ADR text: [`DECISIONS_LOG.md`](./DECISIONS_LOG.md)
 
 The following modules exist as stubs only. Their architecture is not frozen and will be specified in future milestones.
 
-| Module | Planned milestone |
-|---|---|
-| Retriever wiring layer (real loading + DI assembly into a runnable `HybridRetriever`) | Unscheduled — orphaned by the M3.3 renumbering; needs a milestone slot assigned |
-| Full generation pipeline wiring (`HybridRetriever` output → `Generator` input, end to end) | Deferred until Verification exists |
-| `verification/confidence.py` | M6 |
-| `evaluation/metrics.py`, `evaluation/run_baselines.py` | M7 |
-| `app/` (Streamlit) | M8 |
+| Module | Planned milestone | Notes |
+|---|---|---|
+| Retriever wiring layer (real loading + DI assembly into a runnable `HybridRetriever`) | Unscheduled — orphaned by the M3.3 renumbering; needs a milestone slot assigned | Pending |
+| Full generation pipeline wiring (`HybridRetriever` output → `Generator` input, end to end) | Deferred until Verification exists | Pending |
+| `verification/confidence.py` | M6 | Architecture frozen (ADR-M6-001..005); implementation deferred |
+| `evaluation/metrics.py`, `evaluation/run_baselines.py` | M7 | Pending |
+| `app/` (Streamlit) | M8 | Pending |
 
 ---
 

@@ -642,3 +642,118 @@ Accepted
    - Zero claims returns empty list `[]` without NLI execution.
    - Empty context returns all claims as `UNVERIFIABLE` with zero NLI execution.
    - NLI execution failure raises `NLIInferenceError`.
+
+---
+
+## ADR-M6-001
+**Title:** Contradiction Hard-Ceiling Policy
+
+**Affected milestone:**
+M6
+
+**Status:**
+Accepted
+
+**Decision:**
+1. Affirmative contradiction signal: Any `CONTRADICTED` claim in `verifications` triggers the contradiction ceiling mechanism.
+2. If `contradicted_count > 0`, the final score is capped: `score = min(base_score, contradiction_ceiling)`.
+3. The flag `contradiction_ceiling_applied` is defined strictly as `contradicted_count > 0 and base_score > contradiction_ceiling`. It evaluates to `True` only when the ceiling actively constrained the numerical score. If `base_score <= contradiction_ceiling`, `contradiction_ceiling_applied` is `False`.
+4. The hard-ceiling mechanism is frozen. The default numeric ceiling value of `0.2` is provisional and uncalibrated pending ground-truth evaluation.
+
+**Rationale:**
+Extends M5's contradiction-priority policy (`ADR-M5-002`) to the answer level. In clinical medical QA, factual contradiction of an atomic claim by retrieved literature indicates high hallucination risk that overrides factual support on other claims.
+
+---
+
+## ADR-M6-002
+**Title:** Unverifiable Claims via Denominator Dilution
+
+**Affected milestone:**
+M6
+
+**Status:**
+Accepted
+
+**Decision:**
+1. `UNVERIFIABLE` claims contribute to total claims `n` (the denominator of `base_score = s / n`), but do not contribute to the numerator `s`.
+2. No explicit additional penalty or multiplier is applied to unverifiable claims.
+3. `UNVERIFIABLE` claims do not activate the contradiction hard ceiling.
+
+**Rationale:**
+An unverifiable claim represents a retrieval-coverage gap or epistemic uncertainty, not an affirmative hallucination or proven error. Treating retrieval gaps as harshly as contradicted claims would penalize answers for literature gaps identically to factual falsehoods.
+
+---
+
+## ADR-M6-003
+**Title:** Verdict-Count-Based Scoring; NLI Probabilities Excluded from Frozen Formula
+
+**Affected milestone:**
+M6
+
+**Status:**
+Accepted
+
+**Decision:**
+1. Base score calculation is strictly count-based: `base_score = supported_count / total_claims`.
+2. Softmax probabilities (`entailment_prob`, `neutral_prob`, `contradiction_prob`) from M5's `NLIScore` are excluded from the M6 scoring formula.
+3. M5 probability data remains available as an evidence and audit trail within `ClaimVerification.evidence.all_scores`, preserved read-only.
+4. M6 loads no model, tokenizer, or inference pipeline; it is a deterministic pure function over already-computed M5 verification results.
+
+**Rationale:**
+Cross-encoder softmax outputs are uncalibrated as answer-level probabilities; incorporating their raw continuous magnitudes into the headline confidence score would introduce false precision without empirical grounding.
+
+---
+
+## ADR-M6-004
+**Title:** M6 Output Schema and Zero-Claim Sentinel Semantics
+
+**Affected milestone:**
+M6
+
+**Status:**
+Accepted
+
+**Decision:**
+1. Introduce `schemas/confidence_result.py` with `ConfidenceResult(BaseModel)`:
+   - `score: float | None`
+   - `level: Literal["HIGH", "MEDIUM", "LOW", "NOT_APPLICABLE"]`
+   - `total_claims: int`
+   - `supported_count: int`
+   - `contradicted_count: int`
+   - `unverifiable_count: int`
+   - `contradiction_ceiling_applied: bool`
+2. Invariants (frozen):
+   - `total_claims == supported_count + contradicted_count + unverifiable_count`
+   - All counts `>= 0`
+   - `score is None` $\iff$ `total_claims == 0` $\iff$ `level == "NOT_APPLICABLE"`
+   - `total_claims == 0` $\implies$ `contradiction_ceiling_applied == False`
+   - `total_claims > 0` $\implies$ `score` $\in [0.0, 1.0]$ and `level` $\in \{"\text{HIGH}", "\text{MEDIUM}", "\text{LOW}"\}$
+3. Zero-claim sentinel: When `verifications == []`, return `score = None`, `level = "NOT_APPLICABLE"`, all counts `0`, and `contradiction_ceiling_applied = False`. Zero claims signifies that no verifiable claims were available for evaluation, not that the answer is completely contradicted (`0.0`).
+4. Diagnostic counts only: No claim texts or passage texts are duplicated into `ConfidenceResult`.
+
+**Rationale:**
+Preserves clean schema boundaries and explicit sentinel semantics for empty extractions, preventing downstream systems from conflating "no claims extracted" with "completely false answer".
+
+---
+
+## ADR-M6-005
+**Title:** Confidence Thresholds Provisional Pending Ground-Truth Evaluation
+
+**Affected milestone:**
+M6
+
+**Status:**
+Accepted
+
+**Decision:**
+1. The architectural mechanisms (verdict-count scoring, contradiction hard ceiling, denominator dilution, ordered categorical boundary checks) are frozen.
+2. The numeric defaults:
+   - `confidence_contradiction_ceiling = 0.2`
+   - `confidence_level_high_threshold = 0.8`
+   - `confidence_level_medium_threshold = 0.5`
+   are explicitly designated as **provisional and uncalibrated**.
+3. Small-sample calibration passes (e.g. N=10) are explicitly rejected for M6. Meaningful calibration requires evaluation against ground-truth answer correctness on a representative dataset in M7.
+
+**Rationale:**
+Prevents provisional heuristic values from being treated as empirically or clinically validated thresholds prior to systematic ground-truth evaluation.
+
