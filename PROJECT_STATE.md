@@ -78,7 +78,7 @@ Frozen at: 2026-08-02
 | Layer | Status | Notes |
 |---|---|---|
 | `config/` (settings, exceptions) | ✅ Passing | `test_config.py`, `test_settings.py`, `test_exceptions.py` |
-| `schemas/` | ✅ Passing | `test_schemas.py`, `schemas/verification.py` |
+| `schemas/` | ✅ Passing | `test_schemas.py`, `schemas/verification.py`, `schemas/verification_result.py` |
 | `index/` BM25 pipeline & build | ✅ Passing | `test_bm25_pipeline.py` (including ACR-003 regression tests), `test_bm25_tokenizer.py` |
 | `index/` FAISS pipeline | ✅ Passing | `test_faiss_pipeline.py`, `test_embedding_generator.py` |
 | `index/` FAISS pmids (ACR-001) | ✅ Passing | `tests/index/test_faiss_pipeline_acr001.py` |
@@ -88,7 +88,7 @@ Frozen at: 2026-08-02
 | `generation/` LLM loader | ✅ Passing | `tests/generation/test_llm_loader.py` |
 | `generation/` context builder | ✅ Passing | `tests/generation/test_context_builder.py` |
 | `generation/` generator | ✅ Passing | `tests/generator/test_generator.py` |
-| `verification/` | 🟡 Architecture Frozen | ADR-M4-001, ADR-M4-002, ADR-M4-003 accepted; `schemas/verification.py` present; implementation pending |
+| `verification/` | ✅ Implemented & Frozen | M4 (claim extraction) + M5 (PubMedBERT NLI verification, evidence aggregation, ClaimVerifier); ADR-M4-001..003, ADR-M5-001..004 |
 | `evaluation/` | ⬜ Not yet built | Stubs only |
 | `app/` | ⬜ Not yet built | Stub only |
 
@@ -101,7 +101,7 @@ Frozen at: 2026-08-02
 | Working tree | ✅ Clean |
 | Lint (ruff) | ✅ Passing (`ruff check .` clean) |
 | Formatting (black) | ✅ Passing (`black --check .` clean) |
-| Test suite | ✅ Passing (138/138 tests passing — up from 125 after M3.2 bootstrap tests were added) |
+| Test suite | ✅ Passing (220/220 tests passing) |
 | Compilation | ✅ Passing (`python -m compileall .` clean) |
 | Frozen artifacts | ✅ **Corpus & Indexes Generated!** `corpus.jsonl` (171,858 records), `bm25_index.pkl` (171,858 docs), and `faiss_index.bin` (171,858 vectors, dim=768) present. |
 
@@ -125,6 +125,10 @@ Frozen at: 2026-08-02
 | ADR-M4-001 | Verification Unit = Atomic Medical Claim | ✅ Accepted |
 | ADR-M4-002 | Verification-Side Evidence Attribution | ✅ Accepted |
 | ADR-M4-003 | Atomic Claim Extraction Specification | ✅ Accepted |
+| ADR-M5-001 | Evidence Candidate Set and Semantic Direction | ✅ Accepted |
+| ADR-M5-002 | Evidence Aggregation Policy and Contradiction Priority | ✅ Accepted |
+| ADR-M5-003 | NLI Cross-Encoder Inference and Public API Contract | ✅ Accepted |
+| ADR-M5-004 | Verification Orchestration and PMID Ownership | ✅ Accepted |
 
 ---
 
@@ -147,11 +151,16 @@ Frozen at: 2026-08-02
    - N=10 real pipeline GeneratedAnswer samples fully annotated across 7 claim extraction metrics (`m4_calibration_reconciliation.md`).
    - MAX_CLAIMS=35 empirically established (observed max = 24, +45.8% safety margin).
    - ADR-M4-003 accepted, specifying LLM-based decomposition, greedy decoding, plain-text one-claim-per-line contract, deterministic string filtering, and fail-loud bounds.
+7. **M4 Claim Extraction implemented, validated, and frozen.**
+   - Atomic claim extraction pipeline implemented (`verification/claim_extraction_prompts.py`, `verification/claim_extraction.py`, `schemas/verification.py`).
+   - Greedy decoding, plain-text one-claim-per-line contract, deterministic string filtering, MAX_CLAIMS=35 boundary. Committed at `bd95774` (`m4-frozen`).
+8. **M5 Hallucination Verification implemented, validated, and frozen.**
+   - NLI model loader (`verification/nli_loader.py`), batched NLI inference (`verification/nli_inference.py`), pure evidence aggregation with contradiction priority (`verification/evidence_aggregation.py`), and verifier orchestrator (`verification/verifier.py`).
+   - PubMedBERT cross-encoder (`pritamdeka/PubMedBERT-MNLI-MedNLI`) CPU execution, dynamic label mapping, exact 4-argument `run_nli_batch` API boundary, verifier-owned PMID attribution. Committed at `25d22ae` (`m5-frozen`).
 
-### Active limitations entering M4 implementation
-1. **M4 Implementation Pending.** Claim extraction parser (`verification/claim_extraction.py`), prompt template (`verification/claim_extraction_prompts.py`), and test suite to be implemented against frozen ADR-M4-003.
-2. **`PromptBuilder` context budget is prompt-only.** Token budgeting does not reserve headroom for `llm_max_new_tokens`.
-3. **Full verification pipeline wiring orchestrator.** Retriever has one (`retrieval/bootstrap.py`); generation has `generation/bootstrap.py`; verification pipeline orchestrator deferred to M5.
+### Active limitations entering M6
+1. **`PromptBuilder` context budget is prompt-only.** Token budgeting does not reserve headroom for `llm_max_new_tokens`.
+2. **M6 Confidence Scoring Architecture Pending.** Verification outputs from M5 (`list[ClaimVerification]`) to be integrated into answer-level confidence calculation.
 
 ---
 
