@@ -106,6 +106,15 @@ class Settings(BaseSettings):
     # llm_max_new_tokens — see PromptBuilder's constructor docstring.
     llm_context_window: int = 3072
 
+    # ── Hallucination Verification (M5) ──────────────────────────────────
+    # NLI cross-encoder model checkpoint for claim verification against
+    # retrieved evidence passages. Fixed per M5 architecture.
+    verifier_model_name: str = "pritamdeka/PubMedBERT-MNLI-MedNLI"
+    verifier_device: str = "cpu"
+    verifier_nli_batch_size: int = 32
+    verifier_entailment_threshold: float = 0.5
+    verifier_contradiction_threshold: float = 0.5
+
     # ── Corpus Construction (M3.1.1) ────────────────────────────────────
     # Canonical location of the frozen, version-controlled MeSH query
     # specification consumed (never written) by corpus construction. See

@@ -1,9 +1,9 @@
 # ARCHITECTURE_BASELINE
 
-**Frozen at:** Milestone M4 — Claim Extraction<br>
+**Frozen at:** Milestone M5 — Hallucination Verification<br>
 **Status:** Canonical<br>
-**Supersedes:** Milestone M3.3 baseline<br>
-**Next update trigger:** M5 freeze
+**Supersedes:** Milestone M4 baseline<br>
+**Next update trigger:** M6 freeze
 
 > This document is the canonical repository state after every frozen milestone.
 > It is rewritten — not appended — at each freeze point.
@@ -19,7 +19,7 @@
 | **Project name** | Medical RAG Hallucination Detection |
 | **Python version** | 3.11+ |
 | **Architecture version** | 1.0 |
-| **Frozen milestone** | M4 |
+| **Frozen milestone** | M5 |
 | **License** | MIT |
 
 ---
@@ -37,7 +37,7 @@
 | M3.3 | LLM-based answer generation | ✅ Frozen |
 | — | Retriever integration (wiring layer) — unscheduled; see §10 | ⬜ Pending |
 | M4 | Claim extraction | ✅ Frozen |
-| M5 | Hallucination verification | ⬜ Pending |
+| M5 | Hallucination verification | ✅ Frozen |
 | M6 | Confidence scoring | ⬜ Pending |
 | M7 | Evaluation & baselines | ⬜ Pending |
 | M8 | Streamlit application | ⬜ Pending |
@@ -80,6 +80,7 @@ medical-rag-hallucination/
 │   ├── retrieval.py               # RetrievalHit, FusionResult, HybridScoredDocument (M3.2)
 │   ├── generation.py              # GeneratedAnswer (M3.3)
 │   ├── verification.py            # ExtractedClaim (M4)
+│   ├── verification_result.py     # NLIScore, EvidenceAttribution, ClaimVerification (M5)
 │   ├── requests.py                # (stub) Request schemas
 │   └── responses.py               # (stub) Response schemas
 │
@@ -89,10 +90,13 @@ medical-rag-hallucination/
 │   ├── generator.py               # Generator orchestrator + make_transformers_generate_fn
 │   └── llm_loader.py              # Model/tokenizer loading only (ADR-M3.3-001)
 │
-├── verification/                  # Hallucination verification (M4 frozen; M5+ pending)
+├── verification/                  # Hallucination verification (M4 & M5 frozen; M6+ pending)
 │   ├── claim_extraction_prompts.py # Declarative prompt template constants (ADR-M4-003)
 │   ├── claim_extraction.py        # Parser & extraction orchestrator (ADR-M4-003)
-│   ├── verifier.py                # (stub — M5)
+│   ├── nli_loader.py              # NLI model loader & label mapping (ADR-M5-003)
+│   ├── nli_inference.py           # Batched NLI inference (ADR-M5-003)
+│   ├── evidence_aggregation.py    # Evidence aggregation & contradiction priority (ADR-M5-002)
+│   ├── verifier.py                # ClaimVerifier orchestration (ADR-M5-001, ADR-M5-004)
 │   └── confidence.py              # (stub — M6)
 │
 ├── evaluation/                    # Metrics and baselines (stub — M7+)
@@ -476,6 +480,70 @@ class ExtractedClaim(BaseModel):
 
 ---
 
+### 5.7 M5 — Hallucination Verification
+
+**Modules:** `verification/nli_loader.py`, `verification/nli_inference.py`, `verification/evidence_aggregation.py`, `verification/verifier.py`, `schemas/verification_result.py`<br>
+**Entry point:** `ClaimVerifier.verify_claims(claims, context)` (`verification/verifier.py`)<br>
+**Underlying model:** `pritamdeka/PubMedBERT-MNLI-MedNLI` on CPU by default (Settings: `verifier_model_name`, `verifier_device`)<br>
+**Inference engine:** Hugging Face Transformers cross-encoder sequence classification (`torch.inference_mode()`)<br>
+
+#### Design principles
+
+- **Candidate evidence set is the full retrieved context, per ADR-M5-001.** Every passage in `GeneratedAnswer.context` (`list[HybridScoredDocument]`) is evaluated against every extracted claim. No reranker or pre-filter is applied.
+- **NLI semantic direction, per ADR-M5-001:**
+  - `PREMISE` = evidence passage abstract (`doc.document.abstract`)
+  - `HYPOTHESIS` = extracted atomic claim (`claim.claim_text`)
+  - Pair ordering: `(passage_text, claim_text)`.
+- **Dynamic label mapping, per ADR-M5-003.** Derived dynamically from `model.config.id2label` at load/inference time. Supported canonical labels: `"entailment"`, `"neutral"`, `"contradiction"`. Numeric label IDs are never hardcoded.
+- **Public NLI API boundary, per ADR-M5-003:**
+  ```python
+  def run_nli_batch(
+      pairs: list[tuple[str, str]],
+      tokenizer: Any,
+      model: Any,
+      batch_size: int,
+  ) -> list[NLIScore]:
+  ```
+  Internal chunking and batching belongs to `run_nli_batch`. Output strictly preserves 1-to-1 pair ordering: `results[i] <-> pairs[i]`. Returns raw softmax probabilities without thresholding or verdicts.
+- **Verifier-owned PMID attribution, per ADR-M5-004.** `run_nli_batch` returns `passage_pmid=""`. `ClaimVerifier` attaches the corresponding context passage PMID (`doc.document.pmid`) at the orchestration boundary prior to aggregation.
+- **Pure evidence aggregation with contradiction priority, per ADR-M5-002.**
+  - Max-pooling across candidate passages for each claim: `max_contra` and `max_entail`.
+  - Contradiction checked first against `verifier_contradiction_threshold` (default 0.5) ⟹ `CONTRADICTED` (attributed PMID = highest contradiction passage).
+  - Entailment checked second against `verifier_entailment_threshold` (default 0.5) ⟹ `SUPPORTED` (attributed PMID = highest entailment passage).
+  - Otherwise ⟹ `UNVERIFIABLE` (`attributed_pmid = None`).
+  - Full candidate audit trail preserved in `EvidenceAttribution.all_scores`.
+
+#### Verification schemas (`schemas/verification_result.py`)
+
+```python
+class NLIScore(BaseModel):
+    passage_pmid: str
+    entailment_prob: float
+    neutral_prob: float
+    contradiction_prob: float
+
+class EvidenceAttribution(BaseModel):
+    attributed_pmid: str | None
+    all_scores: list[NLIScore]
+
+class ClaimVerification(BaseModel):
+    claim_text: str
+    verdict: Literal["SUPPORTED", "CONTRADICTED", "UNVERIFIABLE"]
+    evidence: EvidenceAttribution
+```
+
+#### Failure boundaries
+
+| Condition | Behavior |
+|---|---|
+| Malformed or invalid input types (non-list, non-ExtractedClaim, non-HybridScoredDocument) | `VerificationInputError` raised. |
+| Zero claims provided (`claims=[]`) | Returns `[]` immediately without NLI execution. |
+| Empty context provided (`context=[]`) | Returns all claims with verdict `"UNVERIFIABLE"` and empty `all_scores` without NLI execution. |
+| Model `id2label` missing or unresolvable to canonical labels | `VerifierLabelMappingError` raised. |
+| Tokenization, forward pass failure, or NaN/Inf logits | `NLIInferenceError` raised. Never silently converted to UNVERIFIABLE. |
+
+---
+
 ## 6. Frozen Artifact Set (M3.2 state)
 
 All of the following must be present and internally consistent before any retrieval can be attempted.
@@ -528,6 +596,11 @@ All configuration flows through `config/settings.py` (`pydantic-settings`, reads
 | `pubmedqa_filename` | `"ori_pqal.json"` | M3.1.1 | PubMedQA release filename |
 | `ncbi_email` | `""` | M3.1.1 | NCBI E-utilities contact email |
 | `ncbi_api_key` | `""` | M3.1.1 | NCBI E-utilities API key |
+| `verifier_model_name` | `"pritamdeka/PubMedBERT-MNLI-MedNLI"` | M5 | Verifier cross-encoder checkpoint |
+| `verifier_device` | `"cpu"` | M5 | Verifier target device |
+| `verifier_nli_batch_size` | `32` | M5 | NLI inference batch size |
+| `verifier_entailment_threshold` | `0.5` | M5 | Threshold for SUPPORTED verdict |
+| `verifier_contradiction_threshold` | `0.5` | M5 | Threshold for CONTRADICTED verdict |
 
 ---
 
@@ -581,6 +654,7 @@ These standards apply globally. They are invariant across milestones unless an A
 | `RetrievalHit`, `FusionResult`, `HybridScoredDocument` | `schemas/retrieval.py` | Retrieval-specific; carry ranking/fusion metadata |
 | `GeneratedAnswer` | `schemas/generation.py` | Pre-verification generation output; distinct from `AnswerResponse` |
 | `ExtractedClaim` | `schemas/verification.py` | Atomic medical claim verification unit (M4; ADR-M4-001, ADR-M4-002, ADR-M4-003) |
+| `NLIScore`, `EvidenceAttribution`, `ClaimVerification` | `schemas/verification_result.py` | Verification results, evidence attribution & NLI scores (M5; ADR-M5-001..004) |
 
 Retrieval result schemas are separate from corpus schemas by design: retrieval results carry rank, score, and fusion metadata that has no place on a `CorpusDocument`.
 
@@ -613,6 +687,10 @@ Standalone architectural decisions (as opposed to change requests against alread
 | ADR-M4-001 | M4 | Verification Unit = Atomic Medical Claim | Accepted |
 | ADR-M4-002 | M4 | Verification-Side Evidence Attribution | Accepted |
 | ADR-M4-003 | M4 | Atomic Claim Extraction Specification (LLM-Based Decomposition) | Accepted |
+| ADR-M5-001 | M5 | Evidence Candidate Set and Semantic Direction | Accepted |
+| ADR-M5-002 | M5 | Evidence Aggregation Policy and Contradiction Priority | Accepted |
+| ADR-M5-003 | M5 | NLI Cross-Encoder Inference and Public API Contract | Accepted |
+| ADR-M5-004 | M5 | Verification Orchestration and PMID Ownership | Accepted |
 
 Full ADR text: [`DECISIONS_LOG.md`](./DECISIONS_LOG.md)
 
@@ -626,8 +704,7 @@ The following modules exist as stubs only. Their architecture is not frozen and 
 |---|---|
 | Retriever wiring layer (real loading + DI assembly into a runnable `HybridRetriever`) | Unscheduled — orphaned by the M3.3 renumbering; needs a milestone slot assigned |
 | Full generation pipeline wiring (`HybridRetriever` output → `Generator` input, end to end) | Deferred until Verification exists |
-| `verification/claim_extraction.py` (implementation) | M4 implementation (architecture frozen) |
-| `verification/verifier.py`, `verification/confidence.py` | M5–M6 |
+| `verification/confidence.py` | M6 |
 | `evaluation/metrics.py`, `evaluation/run_baselines.py` | M7 |
 | `app/` (Streamlit) | M8 |
 

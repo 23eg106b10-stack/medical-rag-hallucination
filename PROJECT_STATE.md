@@ -7,18 +7,24 @@
 
 ## Current Milestone
 
-**M4 — Claim Extraction (Architecture Freeze)**
-Status: ✅ Architecture Frozen (Implementation Pending)
+**M6 — Confidence Scoring (Architecture & Specification)**
+Status: ⬜ Pending Architecture Alignment
 Details:
-- ADR-M4-001 (Verification Unit = Atomic Medical Claim) accepted.
-- ADR-M4-002 (Verification-Side Evidence Attribution & Claim Schema Stability) accepted.
-- ADR-M4-003 (Atomic Claim Extraction Specification: LLM-based decomposition, greedy decoding, low-fragility plain-text output, deterministic string filtering, MAX_CLAIMS=35) accepted.
-- Calibration analysis reconciled across N=10 real pipeline `GeneratedAnswer` samples (`m4_calibration_reconciliation.md`), empirically justifying MAX_CLAIMS=35 (+45.8% margin above observed peak of 24) and resolving the ~0.02 tok/s anomaly as a sleep-suspension artifact (active E2E generation verified at 1.57–2.11 tok/s).
-- Next: M4 implementation (`verification/claim_extraction_prompts.py`, `verification/claim_extraction.py`, unit tests).
+- Verification results produced by M5 (`list[ClaimVerification]`) will be consumed by confidence scoring.
+- Next: M6 architecture proposal and specification.
 
 ---
 
 ## Last Frozen / Completed Milestones
+
+**M5 — Hallucination Verification**  
+Git tag: `m5-frozen`  
+Details: Implemented NLI model loader (`verification/nli_loader.py`), deterministic batched NLI inference (`verification/nli_inference.py`), pure evidence aggregation with contradiction priority (`verification/evidence_aggregation.py`), and verifier orchestrator (`verification/verifier.py`). Verified with PubMedBERT cross-encoder (`pritamdeka/PubMedBERT-MNLI-MedNLI`) on CPU with dynamic label mapping. Public NLI API boundary fixed at `run_nli_batch(pairs, tokenizer, model, batch_size) -> list[NLIScore]`. Context PMIDs attached by `ClaimVerifier`. Full candidate score audit trail preserved in `EvidenceAttribution.all_scores`. 220 tests passing, ruff/black/compileall clean.
+
+**M4 — Claim Extraction**  
+Git tag: `m4-frozen`  
+Commit: `bd95774` (`feat(verification): implement M4 atomic claim extraction and freeze milestone`)  
+Details: Implemented atomic claim extraction (`verification/claim_extraction_prompts.py`, `verification/claim_extraction.py`, `schemas/verification.py`) using Llama-3.1-8B-Instruct with greedy decoding (`do_sample=False`), plain-text one-claim-per-line contract, deterministic string-level filtering, and `MAX_CLAIMS = 35` fail-loud boundary.
 
 **M3.2 Hybrid Retrieval — Runtime Bring-Up (Runtime Validation)**  
 Commit: `6d20da6` (`feat(retrieval): add M3.2 composition root bootstrap and tests`)  
@@ -52,7 +58,8 @@ Frozen at: 2026-08-02
 
 | Tag | Milestone | Commit / Status |
 |---|---|---|
-| *(untagged)* | M4 — Claim Extraction (Architecture Freeze) | ✅ Architecture Frozen (ADR-M4-001, ADR-M4-002, ADR-M4-003) |
+| `m5-frozen` | M5 — Hallucination Verification | ✅ Complete and frozen |
+| `m4-frozen` | M4 — Claim Extraction | `bd95774` |
 | *(untagged)* | ACR-004 Explicit GPU Layer Placement | ✅ Validated and implemented |
 | *(untagged)* | M3.2 Hybrid Retrieval — Runtime Bring-Up | ✅ Runtime validation complete (`6d20da6`) — real BM25/FAISS/MedCPT/RRF end-to-end, 138 tests passing |
 | *(untagged)* | ACR-003 BM25 Config Correction | ✅ Complete and committed (`1c0f7c8`) |

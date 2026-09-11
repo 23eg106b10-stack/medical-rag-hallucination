@@ -536,3 +536,109 @@ This ADR does not define:
 - Retry/backoff behavior on `ClaimExtractionError` (whether the caller
   re-prompts, fails the question, or does something else is a
   verification-pipeline orchestration decision, not this ADR's).
+
+---
+
+## ADR-M5-001
+**Title:** Evidence Candidate Set and Semantic Direction
+
+**Affected milestone:**
+M5
+
+**Status:**
+Accepted
+
+**Decision:**
+1. The evidence candidate set for claim verification is the complete retrieved context from generation:
+   `GeneratedAnswer.context` (list of `HybridScoredDocument`).
+2. No secondary reranker, pre-filter, or relevance thresholding is applied prior to NLI verification. Every passage in `GeneratedAnswer.context` is evaluated against every extracted claim.
+3. The NLI semantic direction is:
+   - `PREMISE` = evidence passage abstract (`doc.document.abstract`)
+   - `HYPOTHESIS` = extracted atomic claim (`claim.claim_text`)
+   - Pair representation: `(passage_text, claim_text)`.
+
+**Rationale:**
+- Preserves complete alignment with what the generation model saw as evidence.
+- Eliminates upstream retrieval bias or cascading false negatives from a second heuristic filter.
+- Formulates verification strictly as whether the cited/retrieved evidence entails or contradicts the atomic claim.
+
+---
+
+## ADR-M5-002
+**Title:** Evidence Aggregation Policy and Contradiction Priority
+
+**Affected milestone:**
+M5
+
+**Status:**
+Accepted
+
+**Decision:**
+1. Verification evaluates candidate passage NLI probabilities via max-pooling across candidate evidence passages per claim:
+   - `max_contra = max(s.contradiction_prob for s in candidate_scores)`
+   - `max_entail = max(s.entailment_prob for s in candidate_scores)`
+2. Contradiction priority: Contradiction is evaluated first. If `max_contra >= contradiction_threshold` (default 0.5), the verdict is `CONTRADICTED`.
+3. Entailment evaluation: If not contradicted and `max_entail >= entailment_threshold` (default 0.5), the verdict is `SUPPORTED`.
+4. Fallback verdict: If neither threshold is crossed, the verdict is `UNVERIFIABLE`.
+5. Winning evidence attribution:
+   - For `CONTRADICTED`: PMID of the candidate passage with the highest contradiction probability.
+   - For `SUPPORTED`: PMID of the candidate passage with the highest entailment probability.
+   - For `UNVERIFIABLE`: `attributed_pmid = None`.
+6. Audit trail preservation: All evaluated passage scores are retained in `EvidenceAttribution.all_scores`.
+
+**Rationale:**
+- In clinical medical question answering, direct contradiction of a factual claim by any retrieved passage indicates severe risk/hallucination that overrides partial entailment elsewhere.
+- Retaining all candidate scores preserves a full audit trail for downstream confidence calibration and error analysis.
+
+---
+
+## ADR-M5-003
+**Title:** NLI Cross-Encoder Inference and Public API Contract
+
+**Affected milestone:**
+M5
+
+**Status:**
+Accepted
+
+**Decision:**
+1. Verifier model checkpoint: `pritamdeka/PubMedBERT-MNLI-MedNLI` on CPU by default.
+2. Dynamic label mapping: Semantic labels (`"entailment"`, `"neutral"`, `"contradiction"`) are resolved dynamically from `model.config.id2label` at runtime. Numeric label indices are never hardcoded.
+3. Public NLI API contract:
+   ```python
+   def run_nli_batch(
+       pairs: list[tuple[str, str]],
+       tokenizer: Any,
+       model: Any,
+       batch_size: int,
+   ) -> list[NLIScore]:
+   ```
+4. Batching and chunking: `run_nli_batch` owns internal chunking by `batch_size` and guarantees deterministic, 1-to-1 ordered output preserving `results[i] <-> pairs[i]`.
+5. Pure raw probabilities: `run_nli_batch` returns raw softmax probabilities (`entailment_prob`, `neutral_prob`, `contradiction_prob`) under `torch.inference_mode()`. It applies no thresholding or verdict logic.
+
+**Rationale:**
+- Keeps the public inference API minimal, decoupled, and focused purely on batched tensor execution.
+- Dynamic label mapping prevents silent misclassification across different NLI checkpoints or revisions.
+
+---
+
+## ADR-M5-004
+**Title:** Verification Orchestration and PMID Ownership
+
+**Affected milestone:**
+M5
+
+**Status:**
+Accepted
+
+**Decision:**
+1. `ClaimVerifier` (`verification/verifier.py`) is the central orchestrator for Milestone 5.
+2. `ClaimVerifier` constructs `(passage_text, claim_text)` pairs across all claims and context documents, delegates scoring to `run_nli_batch`, and owns PMID association:
+   - It attaches `doc.document.pmid` to the returned `NLIScore` objects using input ordering.
+3. `ClaimVerifier` slices scores per claim and delegates aggregation to `evidence_aggregation.aggregate_evidence`.
+4. Output packaging: Returns a list of `ClaimVerification` objects, preserving input claim ordering.
+5. Error boundaries:
+   - Non-list or mistyped claims/context raise `VerificationInputError`.
+   - Zero claims returns empty list `[]` without NLI execution.
+   - Empty context returns all claims as `UNVERIFIABLE` with zero NLI execution.
+   - NLI execution failure raises `NLIInferenceError`.

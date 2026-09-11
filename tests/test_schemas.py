@@ -8,6 +8,11 @@ from pydantic import ValidationError
 from schemas.common import Document, RetrievedDocument
 from schemas.requests import QuestionRequest
 from schemas.responses import AnswerResponse
+from schemas.verification_result import (
+    ClaimVerification,
+    EvidenceAttribution,
+    NLIScore,
+)
 
 
 def test_document_valid_construction() -> None:
@@ -79,3 +84,102 @@ def test_answer_response_missing_answer_raises() -> None:
     """AnswerResponse requires the answer field."""
     with pytest.raises(ValidationError):
         AnswerResponse()
+
+
+# ── Milestone 5 Verification Schemas ─────────────────────────────────────────
+
+
+def test_nli_score_valid_construction() -> None:
+    """NLIScore accepts passage_pmid and float probabilities."""
+    score = NLIScore(
+        passage_pmid="12345",
+        entailment_prob=0.85,
+        neutral_prob=0.10,
+        contradiction_prob=0.05,
+    )
+    assert score.passage_pmid == "12345"
+    assert score.entailment_prob == 0.85
+    assert score.neutral_prob == 0.10
+    assert score.contradiction_prob == 0.05
+
+
+@pytest.mark.parametrize(
+    "missing_field",
+    ["passage_pmid", "entailment_prob", "neutral_prob", "contradiction_prob"],
+)
+def test_nli_score_missing_field_raises(missing_field: str) -> None:
+    """NLIScore requires all probability and pmid fields."""
+    fields = {
+        "passage_pmid": "12345",
+        "entailment_prob": 0.8,
+        "neutral_prob": 0.1,
+        "contradiction_prob": 0.1,
+    }
+    del fields[missing_field]
+    with pytest.raises(ValidationError):
+        NLIScore(**fields)
+
+
+def test_evidence_attribution_valid_with_pmid_and_scores() -> None:
+    """EvidenceAttribution accepts an attributed_pmid and list of NLIScore."""
+    score = NLIScore(
+        passage_pmid="12345",
+        entailment_prob=0.9,
+        neutral_prob=0.05,
+        contradiction_prob=0.05,
+    )
+    attribution = EvidenceAttribution(
+        attributed_pmid="12345",
+        all_scores=[score],
+    )
+    assert attribution.attributed_pmid == "12345"
+    assert len(attribution.all_scores) == 1
+    assert attribution.all_scores[0].passage_pmid == "12345"
+
+
+def test_evidence_attribution_optional_pmid_none() -> None:
+    """EvidenceAttribution accepts None for attributed_pmid (e.g. UNVERIFIABLE)."""
+    attribution = EvidenceAttribution(
+        attributed_pmid=None,
+        all_scores=[],
+    )
+    assert attribution.attributed_pmid is None
+    assert attribution.all_scores == []
+
+
+def test_evidence_attribution_missing_all_scores_raises() -> None:
+    """EvidenceAttribution requires the all_scores list."""
+    with pytest.raises(ValidationError):
+        EvidenceAttribution(attributed_pmid=None)
+
+
+@pytest.mark.parametrize("verdict", ["SUPPORTED", "CONTRADICTED", "UNVERIFIABLE"])
+def test_claim_verification_valid_verdicts(verdict: str) -> None:
+    """ClaimVerification accepts the three frozen verdicts."""
+    attribution = EvidenceAttribution(attributed_pmid=None, all_scores=[])
+    cv = ClaimVerification(
+        claim_text="Aspirin reduces fever.",
+        verdict=verdict,  # type: ignore[arg-type]
+        evidence=attribution,
+    )
+    assert cv.claim_text == "Aspirin reduces fever."
+    assert cv.verdict == verdict
+    assert cv.evidence == attribution
+
+
+@pytest.mark.parametrize("invalid_verdict", ["CONFLICTING", "SUPPORT", "REFUTED", "UNKNOWN", ""])
+def test_claim_verification_invalid_verdict_raises(invalid_verdict: str) -> None:
+    """ClaimVerification rejects unapproved verdicts (e.g. CONFLICTING or REFUTED)."""
+    attribution = EvidenceAttribution(attributed_pmid=None, all_scores=[])
+    with pytest.raises(ValidationError):
+        ClaimVerification(
+            claim_text="Aspirin reduces fever.",
+            verdict=invalid_verdict,  # type: ignore[arg-type]
+            evidence=attribution,
+        )
+
+
+def test_claim_verification_missing_fields_raises() -> None:
+    """ClaimVerification requires claim_text, verdict, and evidence."""
+    with pytest.raises(ValidationError):
+        ClaimVerification(claim_text="Test claim", verdict="SUPPORTED")  # type: ignore[call-arg]
