@@ -121,3 +121,25 @@ def test_llm_quantized_layers_gpu_resident_defaults_to_false(
     monkeypatch.delenv("LLM_QUANTIZED_LAYERS_GPU_RESIDENT", raising=False)
     settings = get_settings()
     assert settings.llm_quantized_layers_gpu_resident is False
+
+
+def test_confidence_settings_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Confidence scoring settings default to provisional uncalibrated constants (ADR-M6-005)."""
+    monkeypatch.delenv("CONFIDENCE_CONTRADICTION_CEILING", raising=False)
+    monkeypatch.delenv("CONFIDENCE_LEVEL_HIGH_THRESHOLD", raising=False)
+    monkeypatch.delenv("CONFIDENCE_LEVEL_MEDIUM_THRESHOLD", raising=False)
+    settings = get_settings()
+    assert settings.confidence_contradiction_ceiling == 0.2
+    assert settings.confidence_level_high_threshold == 0.8
+    assert settings.confidence_level_medium_threshold == 0.5
+
+
+def test_confidence_settings_env_overrides(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Confidence scoring settings can be overridden via environment variables."""
+    monkeypatch.setenv("CONFIDENCE_CONTRADICTION_CEILING", "0.35")
+    monkeypatch.setenv("CONFIDENCE_LEVEL_HIGH_THRESHOLD", "0.85")
+    monkeypatch.setenv("CONFIDENCE_LEVEL_MEDIUM_THRESHOLD", "0.60")
+    settings = get_settings()
+    assert settings.confidence_contradiction_ceiling == 0.35
+    assert settings.confidence_level_high_threshold == 0.85
+    assert settings.confidence_level_medium_threshold == 0.60

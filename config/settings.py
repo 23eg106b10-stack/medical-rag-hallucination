@@ -115,6 +115,12 @@ class Settings(BaseSettings):
     verifier_entailment_threshold: float = 0.5
     verifier_contradiction_threshold: float = 0.5
 
+    # ── Confidence Scoring (M6) ──────────────────────────────────────────
+    # Provisional, uncalibrated thresholds for answer-level confidence scoring (ADR-M6-005).
+    confidence_contradiction_ceiling: float = 0.2
+    confidence_level_high_threshold: float = 0.8
+    confidence_level_medium_threshold: float = 0.5
+
     # ── Corpus Construction (M3.1.1) ────────────────────────────────────
     # Canonical location of the frozen, version-controlled MeSH query
     # specification consumed (never written) by corpus construction. See
